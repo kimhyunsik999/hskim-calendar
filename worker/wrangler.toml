@@ -2,3 +2,8 @@ name = "hskim-calendar-ics"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 workers_dev = true
+
+[vars]
+GOOGLE_CLIENT_ID = "96523648456-bfhlhpdco6abikujk9h3bmqaof28i2sj.apps.googleusercontent.com"
+
+# Secrets (not in git): wrangler secret put GOOGLE_CLIENT_SECRET / TOKEN_KEY

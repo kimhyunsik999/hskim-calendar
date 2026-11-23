@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchExternal, type ExtCal } from './lib/externalIcs';
 import { fetchForecast, WEATHER_PRESETS, type Forecast, type WeatherLoc } from './lib/weather';
 import { AuthError, listCalendars, listEvents, normalize, subscribeCalendar, type CalEvent, type GCalendar } from './google/api';
-import { clearToken, initGis, requestToken, revoke, storedToken, type Token } from './google/gis';
+import { canRefresh, clearToken, initGis, refreshToken, requestToken, revoke, storedToken, type Token } from './google/gis';
 import type { DateStr } from './lib/date';
 import type { Overrides, ShiftColors } from './lib/shift';
 import type { ShiftCals } from './google/sync';
@@ -146,12 +146,37 @@ export function useGoogle() {
     initGis().then(() => setReady(true), (e: Error) => setError(e.message));
   }, []);
 
-  // Drop the token when it expires so the UI shows "다시 연결".
+  /** Renew silently if we hold a refresh token; otherwise drop the token so the UI shows "다시 연결". */
+  const renew = useCallback(() => {
+    if (!canRefresh()) return setToken(storedToken());
+    refreshToken().then(setToken, (e: Error & { status?: number }) => {
+      // Network hiccup: keep whatever is still valid and try again on the next trigger.
+      setToken(e.status === 401 ? null : storedToken());
+    });
+  }, []);
+
+  // On start: stored access token may have expired while the app was closed.
+  useEffect(() => {
+    if (!storedToken() && canRefresh()) renew();
+  }, [renew]);
+
+  // Renew 5 min before expiry…
   useEffect(() => {
     if (!token) return;
-    const t = setTimeout(() => setToken(storedToken()), Math.max(0, token.expires_at - Date.now() - 60_000));
+    const t = setTimeout(renew, Math.max(0, token.expires_at - Date.now() - 5 * 60_000));
     return () => clearTimeout(t);
-  }, [token]);
+  }, [token, renew]);
+
+  // …and on resume, because iOS freezes timers while the app is in the background.
+  useEffect(() => {
+    const v = () => {
+      if (document.visibilityState !== 'visible') return;
+      const t = storedToken();
+      if (!t || t.expires_at - Date.now() < 5 * 60_000) renew();
+    };
+    document.addEventListener('visibilitychange', v);
+    return () => document.removeEventListener('visibilitychange', v);
+  }, [renew]);
 
   const everConnected = load('hc.connected', false);
 
@@ -167,12 +192,17 @@ export function useGoogle() {
   }, []);
 
   const signOut = useCallback(() => {
-    revoke(storedToken());
+    revoke();
     save('hc.connected', false);
     setToken(null);
   }, []);
 
+  /** Called on a 401 from Google: renew if possible, else sign out locally. */
   const expire = useCallback(() => {
+    if (canRefresh()) {
+      refreshToken().then(setToken, () => setToken(null));
+      return;
+    }
     clearToken();
     setToken(null);
   }, []);
