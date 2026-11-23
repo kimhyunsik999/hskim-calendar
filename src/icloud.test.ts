@@ -15,7 +15,7 @@ const cal = (href: string, name: string, color: string, writable: boolean, comp 
 <response><href>${href}</href><propstat><prop>
   <displayname>${name}</displayname>
   <resourcetype><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
-  <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name="${comp}"/></supported-calendar-component-set>
+  <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='${comp}' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
   ${priv(writable)}
   <calendar-color xmlns="http://apple.com/ns/ical/">${color}FF</calendar-color>
 </prop><status>HTTP/1.1 200 OK</status></propstat></response>`;

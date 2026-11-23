@@ -71,7 +71,7 @@ export async function listCalendars(env) {
     const type = first(r, 'resourcetype') ?? '';
     if (!/<(?:[\w-]+:)?calendar\b/i.test(type)) continue;
     const comps = first(r, 'supported-calendar-component-set') ?? '';
-    if (comps && !/name="VEVENT"/i.test(comps)) continue; // reminders lists etc.
+    if (comps && !/name=["']VEVENT["']/i.test(comps)) continue; // reminders lists etc. (iCloud uses single quotes)
     const priv = first(r, 'current-user-privilege-set') ?? '';
     if (!/<(?:[\w-]+:)?(write|write-content|all)\b/i.test(priv)) continue; // read-only shares
     const href = abs(hrefIn(r), home);
