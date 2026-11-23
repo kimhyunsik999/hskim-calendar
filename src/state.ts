@@ -30,6 +30,8 @@ export type Settings = {
   /** Popup reminder before each shift, minutes. 0 = off. */
   reminderMin: number;
   syncDays: number;
+  /** SYNC_VERSION of the last successful shift sync on this device. */
+  syncedVersion?: number;
 };
 
 const DEFAULT_SETTINGS: Settings = { sharedCalId: null, visibleCalIds: null, reminderMin: 60, syncDays: 120 };

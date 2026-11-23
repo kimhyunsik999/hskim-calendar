@@ -1,5 +1,5 @@
 import { addDays, diffDays, type DateStr } from './date';
-import { baseShift, isWork, shiftInterval, SHIFT_TIMES } from './shift';
+import { baseShift, isWork, shiftInterval, SHIFT_TITLES } from './shift';
 
 const stamp = (iso: string) => iso.slice(0, 19).replace(/[-:]/g, ''); // 2026-11-05T07:00:00 -> 20261105T070000
 
@@ -34,14 +34,13 @@ export function buildShiftIcs(from: DateStr, to: DateStr, alarmMinutes = 0): str
     const s = baseShift(date);
     if (!isWork(s)) continue;
     const { start, end } = shiftInterval(date, s);
-    const t = SHIFT_TIMES[s];
     L.push(
       'BEGIN:VEVENT',
       `UID:${date}-4jo@hskim-calendar`,
       `DTSTAMP:${now}`,
       `DTSTART;TZID=Asia/Seoul:${stamp(start)}`,
       `DTEND;TZID=Asia/Seoul:${stamp(end)}`,
-      `SUMMARY:${s} 근무 (${t.start}-${t.end})`,
+      `SUMMARY:${SHIFT_TITLES[s]}`,
       'TRANSP:OPAQUE',
     );
     if (alarmMinutes > 0) {

@@ -61,5 +61,7 @@ describe('calendar helpers', () => {
     expect(ics).toContain('DTSTART;TZID=Asia/Seoul:20261101T230000');
     expect(ics).toContain('DTEND;TZID=Asia/Seoul:20261102T070000');
     expect(ics).toContain('TRIGGER:-PT60M');
+    expect(ics).toContain('SUMMARY:🌙 C 야간 출근 23:00');
+    expect(ics).toContain('SUMMARY:☀️ A 주간 07:00-15:00');
   });
 });

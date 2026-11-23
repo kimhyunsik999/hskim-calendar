@@ -23,7 +23,20 @@ export const SHIFT_TIMES: Record<WorkShift, { start: string; end: string; label:
   C: { start: '23:00', end: '07:00', label: '야간' },
 };
 
-export const isWork = (s: Shift): s is WorkShift => s === 'A' || s === 'B' || s === 'C';
+/**
+ * Calendar event title. C is labelled by its start ("출근 23:00") because iPhone 캘린더 also lists
+ * the previous night's C on the next morning as "종료 오전 7:00" — this keeps the two lines distinct.
+ */
+export const SHIFT_TITLES: Record<WorkShift, string> = {
+  A: '☀️ A 주간 07:00-15:00',
+  B: '🌆 B 오후 15:00-23:00',
+  C: '🌙 C 야간 출근 23:00',
+};
+
+/** Bump when synced event content (title etc.) changes, so devices re-sync once automatically. */
+export const SYNC_VERSION = 2;
+
+export const isWork =(s: Shift): s is WorkShift => s === 'A' || s === 'B' || s === 'C';
 
 export function baseShift(date: DateStr): Shift {
   const n = CYCLE.length;

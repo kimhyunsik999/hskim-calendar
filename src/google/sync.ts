@@ -1,5 +1,5 @@
 import { addDays, diffDays, type DateStr } from '../lib/date';
-import { effectiveShift, isWork, shiftInterval, SHIFT_TIMES, type Overrides, type Shift } from '../lib/shift';
+import { effectiveShift, isWork, shiftInterval, SHIFT_TITLES, type Overrides, type Shift } from '../lib/shift';
 import { allDay, deleteEvent, insertEvent, listEvents, patchEvent, tag, type GEvent } from './api';
 
 /** Read 근무 변경 (override) events from the shared calendar. */
@@ -32,8 +32,6 @@ export async function setOverride(token: string, calId: string, date: DateStr, s
   }
   await syncShifts(token, calId, date, date, reminderMin);
 }
-
-const shiftSummary = (s: keyof typeof SHIFT_TIMES) => `${s} 근무 (${SHIFT_TIMES[s].start}-${SHIFT_TIMES[s].end})`;
 
 async function pool<T>(items: T[], n: number, fn: (t: T) => Promise<unknown>) {
   let i = 0;
@@ -79,7 +77,7 @@ export async function syncShifts(
     }
     const { start, end } = shiftInterval(date, s);
     const body: Partial<GEvent> = {
-      summary: shiftSummary(s),
+      summary: SHIFT_TITLES[s],
       start: { dateTime: start },
       end: { dateTime: end },
       reminders: { useDefault: false, overrides: reminderMin > 0 ? [{ method: 'popup', minutes: reminderMin }] : [] },
@@ -87,7 +85,7 @@ export async function syncShifts(
     };
     const sh = cur?.extendedProperties?.shared;
     if (!cur) jobs.push(() => insertEvent(token, calId, body));
-    else if (sh?.shift !== s || sh?.remind !== remind) jobs.push(() => patchEvent(token, calId, cur.id, body));
+    else if (sh?.shift !== s || sh?.remind !== remind || cur.summary !== body.summary) jobs.push(() => patchEvent(token, calId, cur.id, body));
   }
 
   let done = 0;

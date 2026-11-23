@@ -8,7 +8,7 @@ import { AuthError, allDay, createCalendar, deleteEvent, insertEvent, shareCalen
 import { saveMonthMemo, setOverride, syncShifts } from './google/sync';
 import { addDays, monthGrid, parts, shiftMonth, today, WEEKDAYS, ymd, type DateStr } from './lib/date';
 import { holidaysOf, type HolidayMap } from './lib/korean';
-import type { Shift } from './lib/shift';
+import { SYNC_VERSION, type Shift } from './lib/shift';
 import { useCalendarData, useGoogle, useSettings } from './state';
 
 type Panel = { kind: 'day'; date: DateStr } | { kind: 'settings' } | { kind: 'stats' } | { kind: 'memo' } | null;
@@ -57,16 +57,18 @@ export default function App() {
   const canEdit = !!(g.token && settings.sharedCalId);
 
   const run = useCallback(
-    async (fn: (token: string) => Promise<unknown>, okMsg?: string) => {
-      if (!g.token) return;
+    async (fn: (token: string) => Promise<unknown>, okMsg?: string): Promise<boolean> => {
+      if (!g.token) return false;
       setBusy(true);
       try {
         await fn(g.token);
         if (okMsg) setToast(okMsg);
         data.reload();
+        return true;
       } catch (e) {
         if (e instanceof AuthError) g.expire();
         setToast((e as Error).message);
+        return false;
       } finally {
         setBusy(false);
         setProgress(null);
@@ -74,6 +76,26 @@ export default function App() {
     },
     [g, data],
   );
+
+  const syncAll = useCallback(
+    (okMsg: string) =>
+      run(
+        (t) =>
+          syncShifts(t, settings.sharedCalId!, todayStr, addDays(todayStr, settings.syncDays - 1), settings.reminderMin, (d, n) =>
+            setProgress(n ? `동기화 중… ${d}/${n}` : '확인 중…'),
+          ),
+        okMsg,
+      ).then((ok) => ok && update({ syncedVersion: SYNC_VERSION })),
+    [run, settings.sharedCalId, settings.syncDays, settings.reminderMin, todayStr, update],
+  );
+
+  // Event format changed since this device last synced → re-sync once automatically.
+  const autoSynced = useRef(false);
+  useEffect(() => {
+    if (!g.token || !settings.sharedCalId || (settings.syncedVersion ?? 1) >= SYNC_VERSION || autoSynced.current) return;
+    autoSynced.current = true;
+    syncAll('근무 일정을 새 형식으로 업데이트했습니다');
+  }, [g.token, settings.sharedCalId, settings.syncedVersion, syncAll]);
 
   useEffect(() => {
     if (!toast) return;
@@ -221,15 +243,7 @@ export default function App() {
             }, '공유 캘린더를 만들었습니다')
           }
           onShare={(email) => run((t) => shareCalendar(t, sharedId!, email), `${email} 에게 공유했습니다`)}
-          onSync={() =>
-            run(
-              (t) =>
-                syncShifts(t, sharedId!, todayStr, addDays(todayStr, settings.syncDays - 1), settings.reminderMin, (d, n) =>
-                  setProgress(n ? `동기화 중… ${d}/${n}` : '확인 중…'),
-                ),
-              '근무 일정 동기화 완료',
-            )
-          }
+          onSync={() => syncAll('근무 일정 동기화 완료')}
           onClose={() => setPanel(null)}
         />
       )}
