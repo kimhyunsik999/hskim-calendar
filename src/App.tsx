@@ -4,12 +4,12 @@ import { MemoSheet } from './components/MemoSheet';
 import { MonthGrid } from './components/MonthGrid';
 import { SettingsSheet, SHARED_CAL_NAME } from './components/SettingsSheet';
 import { StatsSheet } from './components/StatsSheet';
-import { AuthError, allDay, createCalendar, deleteEvent, insertEvent, shareCalendar, type CalEvent } from './google/api';
-import { saveMonthMemo, setOverride, syncShifts } from './google/sync';
+import { AuthError, allDay, createCalendar, deleteEvent, insertEvent, type CalEvent } from './google/api';
+import { ensureShiftCalendars, saveMonthMemo, setOverride, shareAll, syncShifts } from './google/sync';
 import { addDays, monthGrid, parts, shiftMonth, today, WEEKDAYS, ymd, type DateStr } from './lib/date';
 import { holidaysOf, type HolidayMap } from './lib/korean';
-import { SYNC_VERSION, type Shift } from './lib/shift';
-import { useCalendarData, useGoogle, useSettings } from './state';
+import { DEFAULT_COLORS, SHIFT_OPTIONS, SYNC_VERSION, textOn, type Shift, type ShiftColors } from './lib/shift';
+import { shiftCalsFor, useCalendarData, useGoogle, useSettings } from './state';
 
 type Panel = { kind: 'day'; date: DateStr } | { kind: 'settings' } | { kind: 'stats' } | { kind: 'memo' } | null;
 
@@ -77,16 +77,30 @@ export default function App() {
     [g, data],
   );
 
+  const colors = useMemo<ShiftColors>(() => ({ ...DEFAULT_COLORS, ...settings.colors }), [settings.colors]);
+
+  /** Per-shift calendars for the current main calendar (created / colored on demand). */
+  const getShiftCals = useCallback(
+    async (t: string, refresh = false) => {
+      const cached = shiftCalsFor(settings);
+      if (cached && !refresh) return cached;
+      const cals = await ensureShiftCalendars(t, settings.sharedCalId!, colors);
+      update({ shiftCals: { main: settings.sharedCalId!, cals } });
+      return cals;
+    },
+    [settings, colors, update],
+  );
+
   const syncAll = useCallback(
     (okMsg: string) =>
-      run(
-        (t) =>
-          syncShifts(t, settings.sharedCalId!, todayStr, addDays(todayStr, settings.syncDays - 1), settings.reminderMin, (d, n) =>
-            setProgress(n ? `동기화 중… ${d}/${n}` : '확인 중…'),
-          ),
-        okMsg,
-      ).then((ok) => ok && update({ syncedVersion: SYNC_VERSION })),
-    [run, settings.sharedCalId, settings.syncDays, settings.reminderMin, todayStr, update],
+      run(async (t) => {
+        setProgress('근무 캘린더 준비 중…');
+        const cals = await getShiftCals(t, true); // also re-applies colors
+        await syncShifts(t, settings.sharedCalId!, cals, todayStr, addDays(todayStr, settings.syncDays - 1), settings.reminderMin, (d, n) =>
+          setProgress(n ? `동기화 중… ${d}/${n}` : '확인 중…'),
+        );
+      }, okMsg).then((ok) => ok && update({ syncedVersion: SYNC_VERSION })),
+    [run, getShiftCals, settings.sharedCalId, settings.syncDays, settings.reminderMin, todayStr, update],
   );
 
   // Event format changed since this device last synced → re-sync once automatically.
@@ -121,8 +135,15 @@ export default function App() {
   const sharedId = settings.sharedCalId;
   const monthMemo = data.monthMemos.find((e) => e.start === ymd(ym.y, ym.m, 1) && e.calendarId === sharedId);
 
+  const colorVars = Object.fromEntries(
+    SHIFT_OPTIONS.flatMap((s) => [
+      [`--c-${s}`, colors[s]],
+      [`--t-${s}`, textOn(colors[s])],
+    ]),
+  ) as React.CSSProperties;
+
   return (
-    <div className="app">
+    <div className="app" style={colorVars}>
       <header className="top">
         <button className="icon-btn" onClick={() => setPanel({ kind: 'settings' })} aria-label="설정">
           <svg viewBox="0 0 24 24" width="26" height="26"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
@@ -187,7 +208,7 @@ export default function App() {
           busy={busy}
           onClose={() => setPanel(null)}
           onOverride={(date: DateStr, s: Shift | null) =>
-            run((t) => setOverride(t, sharedId!, date, s, settings.reminderMin), s ? `${s}(으)로 변경했습니다` : '기본 근무로 되돌렸습니다')
+            run(async (t) => setOverride(t, sharedId!, await getShiftCals(t), date, s, settings.reminderMin), s ? `${s}(으)로 변경했습니다` : '기본 근무로 되돌렸습니다')
           }
           onAddMemo={(date, title, time) =>
             run((t) =>
@@ -227,6 +248,7 @@ export default function App() {
         <SettingsSheet
           settings={settings}
           update={update}
+          colors={colors}
           calendars={data.calendars}
           connected={!!g.token}
           ready={g.ready}
@@ -242,7 +264,7 @@ export default function App() {
               update({ sharedCalId: c.id });
             }, '공유 캘린더를 만들었습니다')
           }
-          onShare={(email) => run((t) => shareCalendar(t, sharedId!, email), `${email} 에게 공유했습니다`)}
+          onShare={(email) => run(async (t) => shareAll(t, sharedId!, await getShiftCals(t), email), `${email} 에게 공유했습니다`)}
           onSync={() => syncAll('근무 일정 동기화 완료')}
           onClose={() => setPanel(null)}
         />

@@ -9,10 +9,6 @@
   --today-line: #1a73e8;
   --sheet: #ffffff;
   --chip: #f1f3f5;
-  --s-dark: #3a3a3c;
-  --s-b: #ffd400;
-  --s-off: #e8590c;
-  --s-leave: #2f9e44;
   color-scheme: light dark;
   font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', sans-serif;
   -webkit-tap-highlight-color: transparent;
@@ -26,7 +22,6 @@
     --today-bg: #10233f;
     --sheet: #1c1c1e;
     --chip: #2c2c2e;
-    --s-dark: #636366;
   }
 }
 
@@ -77,10 +72,12 @@ main { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; }
 .out { opacity: 0.35; }
 .badge-wrap { display: grid; place-items: center; }
 
-.badge { display: inline-grid; place-items: center; width: 27px; height: 27px; border-radius: 6px; font-weight: 700; font-size: 14px; color: #fff; background: var(--s-dark); position: relative; }
-.badge.sb { background: var(--s-b); color: #222; }
-.badge.off { background: var(--s-off); }
-.badge.leave { background: var(--s-leave); }
+.badge { display: inline-grid; place-items: center; width: 27px; height: 27px; border-radius: 6px; font-weight: 700; font-size: 14px; position: relative; }
+.badge.sa { background: var(--c-A); color: var(--t-A); }
+.badge.sb { background: var(--c-B); color: var(--t-B); }
+.badge.sc { background: var(--c-C); color: var(--t-C); }
+.badge.off { background: var(--c-휴); color: var(--t-휴); }
+.badge.leave { background: var(--c-연차); color: var(--t-연차); }
 .badge.changed::after { content: ''; position: absolute; top: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--today-line); border: 1.5px solid var(--bg); }
 .badge.big { width: 52px; height: 52px; font-size: 24px; border-radius: 12px; }
 
@@ -142,3 +139,8 @@ main { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; }
 .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding: 8px 0; }
 .stat { display: grid; justify-items: center; gap: 6px; }
 .stat-list { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; font-size: 15px; }
+
+.color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.color-item { display: flex; align-items: center; gap: 8px; font-size: 15px; background: var(--chip); border-radius: 10px; padding: 6px 8px; }
+.color-item .name { flex: 1; }
+.color-item input[type='color'] { width: 40px; height: 32px; padding: 0; border: 0; background: none; }

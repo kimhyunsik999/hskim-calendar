@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthError, listCalendars, listEvents, normalize, subscribeCalendar, type CalEvent, type GCalendar } from './google/api';
 import { clearToken, initGis, requestToken, revoke, storedToken, type Token } from './google/gis';
 import type { DateStr } from './lib/date';
-import type { Overrides } from './lib/shift';
+import type { Overrides, ShiftColors } from './lib/shift';
+import type { ShiftCals } from './google/sync';
 
 // ---------- local storage (per-device conveniences only; shared data lives in Google) ----------
 
@@ -32,7 +33,14 @@ export type Settings = {
   syncDays: number;
   /** SYNC_VERSION of the last successful shift sync on this device. */
   syncedVersion?: number;
+  /** Per-shift Google calendars, cached for the main calendar they belong to. */
+  shiftCals?: { main: string; cals: ShiftCals } | null;
+  /** Badge / calendar colors chosen on this device. */
+  colors?: Partial<ShiftColors>;
 };
+
+export const shiftCalsFor = (s: Settings): ShiftCals | null =>
+  s.shiftCals && s.shiftCals.main === s.sharedCalId ? s.shiftCals.cals : null;
 
 const DEFAULT_SETTINGS: Settings = { sharedCalId: null, visibleCalIds: null, reminderMin: 60, syncDays: 120 };
 
@@ -145,8 +153,10 @@ export function useCalendarData(
     (async () => {
       const calendars = await listCalendars(token);
       const byId = new Map(calendars.map((c) => [c.id, c]));
+      // Shift calendars are drawn as badges — never fetch them as overlay events.
+      const shiftIds = new Set(Object.values(shiftCalsFor(settings) ?? {}));
       const visible = new Set(
-        (settings.visibleCalIds ?? calendars.filter((c) => c.selected).map((c) => c.id)).filter((id) => byId.has(id)),
+        (settings.visibleCalIds ?? calendars.filter((c) => c.selected).map((c) => c.id)).filter((id) => byId.has(id) && !shiftIds.has(id)),
       );
       if (settings.sharedCalId && byId.has(settings.sharedCalId)) visible.add(settings.sharedCalId);
 
@@ -180,7 +190,7 @@ export function useCalendarData(
         setError(e.message);
       })
       .finally(() => my === reqId.current && setLoading(false));
-  }, [token, settings.sharedCalId, settings.visibleCalIds, from, to, nonce, cacheKey, onAuthError]);
+  }, [token, settings.sharedCalId, settings.visibleCalIds, settings.shiftCals, from, to, nonce, cacheKey, onAuthError]);
 
   return { ...data, loading, error, reload };
 }

@@ -43,16 +43,35 @@ export async function listCalendars(token: string): Promise<GCalendar[]> {
   return r.items;
 }
 
-export const createCalendar = (token: string, summary: string) =>
+export const createCalendar = (token: string, summary: string, description = '4조 근무표 앱 공유 캘린더 (근무 변경·메모)') =>
   call<{ id: string }>(token, '/calendars', {
     method: 'POST',
-    body: JSON.stringify({ summary, timeZone: 'Asia/Seoul', description: '4조 근무표 앱 공유 캘린더 (근무·변경·메모)' }),
+    body: JSON.stringify({ summary, timeZone: 'Asia/Seoul', description }),
   });
 
 export const shareCalendar = (token: string, calId: string, email: string) =>
   call(token, `/calendars/${enc(calId)}/acl?sendNotifications=true`, {
     method: 'POST',
     body: JSON.stringify({ role: 'writer', scope: { type: 'user', value: email } }),
+  });
+
+export const getCalendar = (token: string, calId: string) =>
+  call<{ id: string; summary: string; description?: string }>(token, `/calendars/${enc(calId)}`);
+
+export const patchCalendar = (token: string, calId: string, body: { description?: string }) =>
+  call(token, `/calendars/${enc(calId)}`, { method: 'PATCH', body: JSON.stringify(body) });
+
+/** People (other than owners) a calendar is shared with as writer. */
+export async function listWriters(token: string, calId: string): Promise<string[]> {
+  const r = await call<{ items: { role: string; scope: { type: string; value?: string } }[] }>(token, `/calendars/${enc(calId)}/acl`);
+  return r.items.filter((a) => a.role === 'writer' && a.scope.type === 'user' && a.scope.value).map((a) => a.scope.value!);
+}
+
+/** Per-user display color of a calendar (Google + iPhone show this). */
+export const setCalendarColor = (token: string, calId: string, bg: string, fg: string) =>
+  call(token, `/users/me/calendarList/${enc(calId)}?colorRgbFormat=true`, {
+    method: 'PATCH',
+    body: JSON.stringify({ backgroundColor: bg, foregroundColor: fg }),
   });
 
 /** Add a calendar someone shared with us to our list. Already-present is fine. */
@@ -74,6 +93,7 @@ export type GEvent = {
   description?: string;
   status?: string;
   colorId?: string;
+  transparency?: 'opaque' | 'transparent';
   start: { date?: string; dateTime?: string };
   end: { date?: string; dateTime?: string };
   extendedProperties?: { shared?: Record<string, string> };

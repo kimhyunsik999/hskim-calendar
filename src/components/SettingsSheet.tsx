@@ -1,15 +1,19 @@
 import { useState } from 'react';
 import type { GCalendar } from '../google/api';
 import { CLIENT_ID } from '../google/gis';
-import { ANCHOR, SHIFT_TIMES } from '../lib/shift';
-import type { Settings } from '../state';
+import { ANCHOR, DEFAULT_COLORS, SHIFT_OPTIONS, SHIFT_TIMES, type Shift, type ShiftColors } from '../lib/shift';
+import { shiftCalsFor, type Settings } from '../state';
 import { Sheet } from './Sheet';
+import { ShiftBadge } from './ShiftBadge';
 
 export const SHARED_CAL_NAME = '4조 근무표';
+
+const COLOR_LABEL: Record<Shift, string> = { A: 'A 주간', B: 'B 오후', C: 'C 야간', 휴: '휴무', 연차: '연차' };
 
 type Props = {
   settings: Settings;
   update: (p: Partial<Settings>) => void;
+  colors: ShiftColors;
   calendars: GCalendar[];
   connected: boolean;
   ready: boolean;
@@ -30,7 +34,9 @@ export function SettingsSheet(p: Props) {
   const [email, setEmail] = useState('');
   const [copied, setCopied] = useState('');
   const shared = calendars.find((c) => c.id === settings.sharedCalId);
-  const writable = calendars.filter((c) => c.accessRole === 'owner' || c.accessRole === 'writer');
+  const shiftIds = new Set(Object.values(shiftCalsFor(settings) ?? {}));
+  const isShiftCal = (c: GCalendar) => shiftIds.has(c.id) || /^4조 (A 주간|B 오후|C 야간|휴무)$/.test(c.summary);
+  const writable = calendars.filter((c) => (c.accessRole === 'owner' || c.accessRole === 'writer') && !isShiftCal(c));
   const visible = new Set(settings.visibleCalIds ?? calendars.filter((c) => c.selected).map((c) => c.id));
   const base = location.origin + import.meta.env.BASE_URL;
   const inviteLink = settings.sharedCalId ? `${base}#join=${encodeURIComponent(settings.sharedCalId)}` : '';
@@ -107,7 +113,7 @@ export function SettingsSheet(p: Props) {
 
           <section>
             <h3>알람 · 근무 일정 동기화</h3>
-            <p className="muted">근무를 공유 캘린더에 일정으로 넣고, 근무 시작 전에 알림이 오게 합니다. 아이폰 설정 › 캘린더 › 계정에 Google 계정을 추가하면 아이폰 기본 캘린더와 알림에도 나타납니다.</p>
+            <p className="muted">근무를 Google 캘린더 4개(4조 A 주간 · B 오후 · C 야간 · 휴무)에 색깔별로 넣고, 근무 시작 전에 알림이 오게 합니다. 아이폰 설정 › 캘린더 › 계정에 Google 계정을 추가하면 아이폰 기본 캘린더와 알림에도 나타납니다.</p>
             <div className="row">
               <label>알림</label>
               <select value={settings.reminderMin} onChange={(e) => p.update({ reminderMin: Number(e.target.value) })}>
@@ -137,7 +143,7 @@ export function SettingsSheet(p: Props) {
           <section>
             <h3>달력에 표시할 캘린더</h3>
             <ul className="cal-list">
-              {calendars.map((c) => (
+              {calendars.filter((c) => !isShiftCal(c)).map((c) => (
                 <li key={c.id}>
                   <label>
                     <input
@@ -160,6 +166,30 @@ export function SettingsSheet(p: Props) {
           </section>
         </>
       )}
+
+      <section>
+        <h3>근무 색상</h3>
+        <div className="color-grid">
+          {SHIFT_OPTIONS.map((s) => (
+            <label key={s} className="color-item">
+              <ShiftBadge shift={s} />
+              <span className="name">{COLOR_LABEL[s]}</span>
+              <input
+                type="color"
+                value={p.colors[s]}
+                onChange={(e) => p.update({ colors: { ...settings.colors, [s]: e.target.value } })}
+                aria-label={`${COLOR_LABEL[s]} 색`}
+              />
+            </label>
+          ))}
+        </div>
+        <button className="btn ghost wide" onClick={() => p.update({ colors: { ...DEFAULT_COLORS } })}>
+          기본 색으로 되돌리기
+        </button>
+        <p className="muted">
+          앱에는 바로 적용됩니다. 아이폰·구글 캘린더 색은 "근무 일정 동기화"를 누르면 바뀝니다. (연차는 휴무 캘린더에 들어가므로 아이폰 캘린더에서는 휴무 색으로 보입니다)
+        </p>
+      </section>
 
       <section>
         <h3>아이폰 캘린더 구독 (Google 없이)</h3>

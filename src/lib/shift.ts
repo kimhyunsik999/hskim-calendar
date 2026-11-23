@@ -33,8 +33,34 @@ export const SHIFT_TITLES: Record<WorkShift, string> = {
   C: '🌙 C 야간 출근 23:00',
 };
 
+export const OFF_TITLES: Record<'휴' | '연차', string> = { 휴: '🟠 휴무', 연차: '🌴 연차' };
+
 /** Bump when synced event content (title etc.) changes, so devices re-sync once automatically. */
-export const SYNC_VERSION = 2;
+export const SYNC_VERSION = 3;
+
+// ---------- colors ----------
+
+export type ShiftColors = Record<Shift, string>;
+
+export const DEFAULT_COLORS: ShiftColors = {
+  A: '#1c7ed6', // 주간 — 파랑
+  B: '#f2b705', // 오후 — 노랑
+  C: '#6741d9', // 야간 — 보라
+  휴: '#e8590c', // 휴무 — 주황
+  연차: '#2f9e44', // 연차 — 초록
+};
+
+/** Readable text color (black/white) on top of a hex background. */
+export function textOn(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? '#1d1d1f' : '#ffffff';
+}
+
+/** Which of the 4 Google shift calendars a shift belongs to (연차 shares the 휴무 calendar). */
+export type ShiftCalKey = 'A' | 'B' | 'C' | '휴';
+export const calKeyOf = (s: Shift): ShiftCalKey => (s === '연차' ? '휴' : s);
+export const SHIFT_CAL_NAMES: Record<ShiftCalKey, string> = { A: '4조 A 주간', B: '4조 B 오후', C: '4조 C 야간', 휴: '4조 휴무' };
 
 export const isWork =(s: Shift): s is WorkShift => s === 'A' || s === 'B' || s === 'C';
 
