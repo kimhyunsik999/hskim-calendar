@@ -39,6 +39,12 @@ C(야간)는 해당 날짜 23:00 시작 → 다음날 07:00 종료로 처리.
    - GitHub 저장소 **Settings › Secrets and variables › Actions › Variables** 에 `GOOGLE_CLIENT_ID` 로 등록
    - 로컬 개발은 `.env.local` 에 `VITE_GOOGLE_CLIENT_ID=...`
 
+## iCloud 캘린더 표시 (가족 일정 등)
+웹앱은 아이폰/iCloud 캘린더를 직접 읽을 수 없으므로, iCloud **공개 캘린더 링크(ICS)** 를 Cloudflare Worker(`worker/`)를 거쳐 읽습니다.
+- Worker는 iCloud·Google 공개 캘린더 호스트만, 앱 주소(Origin)에서 온 요청만 중계합니다 (오픈 프록시 아님).
+- 배포: `cd worker && CLOUDFLARE_API_TOKEN=... npx wrangler deploy` → 나온 `https://hskim-calendar-ics.<sub>.workers.dev` 를 저장소 변수 `ICS_PROXY_URL` 로 등록.
+- 앱: 설정 › iCloud 캘린더 › 공개 링크 붙여넣기 (기기별 저장). 반복 일정·예외·종일 일정 지원.
+
 ## 아이폰 설치
 1. Safari로 `https://<github-id>.github.io/hskim-calendar/` 열기 → 공유 › **홈 화면에 추가**
 2. 앱 ☰ → Google 캘린더 연결 → `"4조 근무표" 캘린더 새로 만들기` → 배우자 이메일로 공유

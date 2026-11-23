@@ -141,6 +141,8 @@ main { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; }
 .stat { display: grid; justify-items: center; gap: 6px; }
 .stat-list { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; font-size: 15px; }
 
+.ext-form { display: grid; gap: 6px; }
+.color-in { width: 48px !important; height: 42px; padding: 2px; flex: none; }
 .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .color-item { display: flex; align-items: center; gap: 8px; font-size: 15px; background: var(--chip); border-radius: 10px; padding: 6px 8px; }
 .color-item .name { flex: 1; }

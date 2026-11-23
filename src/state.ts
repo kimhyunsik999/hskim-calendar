@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchExternal, type ExtCal } from './lib/externalIcs';
 import { AuthError, listCalendars, listEvents, normalize, subscribeCalendar, type CalEvent, type GCalendar } from './google/api';
 import { clearToken, initGis, requestToken, revoke, storedToken, type Token } from './google/gis';
 import type { DateStr } from './lib/date';
@@ -37,7 +38,49 @@ export type Settings = {
   shiftCals?: { main: string; cals: ShiftCals } | null;
   /** Badge / calendar colors chosen on this device. */
   colors?: Partial<ShiftColors>;
+  /** iCloud etc. calendars added by public ICS link (this device). */
+  externals?: ExtCal[];
 };
+
+// ---------- external (iCloud) calendars ----------
+
+export function useExternalEvents(externals: ExtCal[] | undefined, from: DateStr, to: DateStr) {
+  const key = `hc.ext.${from}.${to}`;
+  const [events, setEvents] = useState<CalEvent[]>(() => load(key, []));
+  const [error, setError] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  const list = useMemo(() => externals ?? [], [externals]);
+
+  useEffect(() => {
+    setEvents(load(key, []));
+    if (!list.length) {
+      setEvents([]);
+      return;
+    }
+    let alive = true;
+    Promise.allSettled(list.map((c) => fetchExternal(c, from, to))).then((rs) => {
+      if (!alive) return;
+      const ok = rs.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+      const failed = rs.flatMap((r) => (r.status === 'rejected' ? [(r.reason as Error).message] : []));
+      setEvents(ok);
+      if (!failed.length) save(key, ok);
+      setError(failed.length ? failed.join(' / ') : null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [list, from, to, key, nonce]);
+
+  // Refresh when the app comes back to the foreground.
+  useEffect(() => {
+    const v = () => document.visibilityState === 'visible' && reload();
+    document.addEventListener('visibilitychange', v);
+    return () => document.removeEventListener('visibilitychange', v);
+  }, [reload]);
+
+  return { events, error, reload };
+}
 
 export const shiftCalsFor = (s: Settings): ShiftCals | null =>
   s.shiftCals && s.shiftCals.main === s.sharedCalId ? s.shiftCals.cals : null;

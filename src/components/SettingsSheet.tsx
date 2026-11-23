@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { GCalendar } from '../google/api';
 import { CLIENT_ID } from '../google/gis';
+import { ICS_PROXY } from '../lib/externalIcs';
 import { ANCHOR, DEFAULT_COLORS, SHIFT_OPTIONS, SHIFT_TIMES, type Shift, type ShiftColors } from '../lib/shift';
 import { shiftCalsFor, type Settings } from '../state';
 import { Sheet } from './Sheet';
@@ -28,6 +29,54 @@ type Props = {
   onSync: () => void;
   onClose: () => void;
 };
+
+function ExternalCalendars({ settings, update }: { settings: Settings; update: (p: Partial<Settings>) => void }) {
+  const list = settings.externals ?? [];
+  const [name, setName] = useState('가족');
+  const [url, setUrl] = useState('');
+  const [color, setColor] = useState('#e03131');
+  const valid = /^(webcal|https):\/\/\S+$/i.test(url.trim());
+  return (
+    <section>
+      <h3>iCloud 캘린더 (공개 링크)</h3>
+      <p className="muted">
+        아이폰 캘린더 앱 › 캘린더 목록 › 해당 캘린더 ⓘ › <b>공개 캘린더</b> 켜기 › 링크 공유로 복사한 주소를 붙여넣으세요. (공유받은 캘린더는 만든 사람만 공개로 바꿀 수 있습니다)
+      </p>
+      {!ICS_PROXY && <p className="warn">iCloud 중계 서버가 아직 설정되지 않았습니다.</p>}
+      <ul className="cal-list">
+        {list.map((c) => (
+          <li key={c.id} className="row">
+            <label>
+              <i className="dot" style={{ background: c.color }} />
+              {c.name}
+            </label>
+            <button className="btn ghost" onClick={() => confirm(`"${c.name}" 캘린더를 앱에서 뺄까요?`) && update({ externals: list.filter((x) => x.id !== c.id) })}>
+              삭제
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="ext-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!valid) return;
+          update({ externals: [...list, { id: `ext:${Date.now().toString(36)}`, name: name.trim() || 'iCloud', url: url.trim(), color }] });
+          setUrl('');
+        }}
+      >
+        <div className="row">
+          <input placeholder="이름 (예: 가족)" value={name} onChange={(e) => setName(e.target.value)} />
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label="색" className="color-in" />
+        </div>
+        <input placeholder="webcal://p…-caldav.icloud.com/published/…" value={url} onChange={(e) => setUrl(e.target.value)} inputMode="url" autoCapitalize="off" autoCorrect="off" />
+        <button className="btn wide" disabled={!valid}>
+          iCloud 캘린더 추가
+        </button>
+      </form>
+    </section>
+  );
+}
 
 export function SettingsSheet(p: Props) {
   const { settings, calendars } = p;
@@ -166,6 +215,8 @@ export function SettingsSheet(p: Props) {
           </section>
         </>
       )}
+
+      <ExternalCalendars settings={settings} update={p.update} />
 
       <section>
         <h3>근무 색상</h3>

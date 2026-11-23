@@ -9,7 +9,7 @@ import { ensureShiftCalendars, saveMonthMemo, setOverride, shareAll, syncShifts 
 import { addDays, monthGrid, parts, shiftMonth, today, WEEKDAYS, ymd, type DateStr } from './lib/date';
 import { holidaysOf, type HolidayMap } from './lib/korean';
 import { DEFAULT_COLORS, SHIFT_OPTIONS, SYNC_VERSION, textOn, type Shift, type ShiftColors } from './lib/shift';
-import { shiftCalsFor, useCalendarData, useGoogle, useSettings } from './state';
+import { shiftCalsFor, useCalendarData, useExternalEvents, useGoogle, useSettings } from './state';
 
 type Panel = { kind: 'day'; date: DateStr } | { kind: 'settings' } | { kind: 'stats' } | { kind: 'memo' } | null;
 
@@ -40,6 +40,9 @@ export default function App() {
   const from = days[0];
   const to = days[days.length - 1];
   const data = useCalendarData(g.token, settings, update, from, to, g.expire);
+  const ext = useExternalEvents(settings.externals, from, to);
+  const events = useMemo(() => [...data.events, ...ext.events], [data.events, ext.events]);
+  const loadError = data.error ?? ext.error;
 
   const [holidays, setHolidays] = useState<HolidayMap>({});
   useEffect(() => {
@@ -179,7 +182,7 @@ export default function App() {
           month={ym.m}
           days={days}
           todayStr={todayStr}
-          events={data.events}
+          events={events}
           overrides={data.overrides}
           holidays={holidays}
           onPick={(date) => setPanel({ kind: 'day', date })}
@@ -201,12 +204,12 @@ export default function App() {
           Google 연결이 만료되었습니다 · 다시 연결
         </button>
       )}
-      {(data.error || toast) && <div className="toast">{toast ?? data.error}</div>}
+      {(loadError || toast) && <div className="toast">{toast ?? loadError}</div>}
 
       {panel?.kind === 'day' && (
         <DaySheet
           date={panel.date}
-          events={data.events}
+          events={events}
           overrides={data.overrides}
           holidays={holidays}
           sharedCalId={sharedId}
