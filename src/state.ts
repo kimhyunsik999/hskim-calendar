@@ -118,7 +118,10 @@ export function useICloudEvents(token: string | null, calId: string | null, ids:
     fetchICloudEvents(token, calId, ids, from, to)
       .then(async ({ calendars }) => {
         const lists = await Promise.all(
-          calendars.flatMap((c) => c.ics.map((ics) => parseIcs(ics, { id: `icloud:${c.id}`, name: c.name, url: '', color: c.color }, from, to))),
+          // One malformed resource must not hide the rest.
+          calendars.flatMap((c) =>
+            c.ics.map((ics) => parseIcs(ics, { id: `icloud:${c.id}`, name: c.name, url: '', color: c.color }, from, to).catch(() => [])),
+          ),
         );
         if (!alive) return;
         const evs = lists.flat();

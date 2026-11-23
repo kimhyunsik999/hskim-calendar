@@ -164,13 +164,14 @@ describe('iCloud CalDAV', () => {
       if (init.method === 'REPORT') {
         bodies.push(`${url} ${init.body}`);
         return new Response(
-          `<multistatus xmlns="DAV:"><response><href>/x/a.ics</href><propstat><prop><calendar-data xmlns="urn:ietf:params:xml:ns:caldav">BEGIN:VCALENDAR
+          `<multistatus xmlns="DAV:"><response><href>/x/a.ics</href><propstat><prop><calendar-data xmlns="urn:ietf:params:xml:ns:caldav"><![CDATA[BEGIN:VCALENDAR
 BEGIN:VEVENT
 UID:a
-SUMMARY:수호 &amp; 지호
+SUMMARY:수호 &amp; 지호 <원문>
 DTSTART;VALUE=DATE:20261127
 END:VEVENT
-END:VCALENDAR</calendar-data></prop></propstat></response></multistatus>`,
+END:VCALENDAR
+]]></calendar-data></prop></propstat></response></multistatus>`,
           { status: 207 },
         );
       }
@@ -180,7 +181,10 @@ END:VCALENDAR</calendar-data></prop></propstat></response></multistatus>`,
     const r = await handleICloud('/icloud/events', { token: 't', calId: 'shared', from: '2026-11-01', to: '2026-12-05', cals: [fam, 'https://evil.example/'] }, env);
     expect(r.calendars).toHaveLength(1); // unknown ids ignored
     expect(r.calendars[0]).toMatchObject({ id: fam, name: '가족' });
-    expect(r.calendars[0].ics[0]).toContain('SUMMARY:수호 & 지호');
+    // iCloud wraps calendar-data in CDATA: taken verbatim (no entity decoding), wrapper removed.
+    expect(r.calendars[0].ics[0].startsWith('BEGIN:VCALENDAR')).toBe(true);
+    expect(r.calendars[0].ics[0]).toContain('SUMMARY:수호 &amp; 지호 <원문>');
+    expect(r.calendars[0].ics[0]).not.toContain('CDATA');
     expect(bodies[0]).toContain('time-range start="20261031T150000Z" end="20261205T150000Z"');
   });
 

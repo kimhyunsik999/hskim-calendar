@@ -34,6 +34,11 @@ const first = (xml, name) => {
 const responses = (xml) => xml.match(/<(?:[\w-]+:)?response\b[\s\S]*?<\/(?:[\w-]+:)?response>/gi) ?? [];
 const hrefIn = (xml) => (first(xml, 'href') ?? '').trim();
 const unxml = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+/** Element text: iCloud wraps calendar-data in CDATA (taken verbatim); others are entity-escaped. */
+const xmlText = (s) => {
+  const m = s.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
+  return m ? m[1] : unxml(s);
+};
 const abs = (href, base) => new URL(unxml(href), base).toString();
 
 // Discovery takes 3 round trips; keep the result per isolate for a while.
@@ -167,7 +172,7 @@ export async function findByUid(env, uid, date) {
   for (const cal of cals) {
     const xml = await dav(env, cal.id, 'REPORT', body, 1);
     for (const r of responses(xml)) {
-      const ics = unxml(first(r, 'calendar-data') ?? '');
+      const ics = xmlText(first(r, 'calendar-data') ?? '');
       const found = unfold(ics)
         .split(/\r?\n/)
         .some((l) => l.startsWith('UID:') && l.slice(4).trim() === uid);
@@ -244,7 +249,7 @@ export async function handleICloud(path, body, env) {
       cals.map(async (c) => {
         const xml = await dav(env, c.id, 'REPORT', q, 1);
         const ics = responses(xml)
-          .map((r) => unxml(first(r, 'calendar-data') ?? ''))
+          .map((r) => xmlText(first(r, 'calendar-data') ?? ''))
           .filter((s) => s.includes('BEGIN:VEVENT'));
         return { id: c.id, name: c.name, color: c.color, ics };
       }),
