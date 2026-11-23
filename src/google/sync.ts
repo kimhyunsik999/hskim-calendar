@@ -74,7 +74,10 @@ export async function ensureShiftCalendars(token: string, mainId: string, colors
     map = created;
   }
 
-  await Promise.all(KEYS.map((k) => setCalendarColor(token, map![k], colors[k], textOn(colors[k]))));
+  // Colors are cosmetic: never let them block the sync. Google only accepts pure black/white foregrounds.
+  await Promise.allSettled(
+    KEYS.map((k) => setCalendarColor(token, map![k], colors[k], textOn(colors[k]) === '#ffffff' ? '#ffffff' : '#000000')),
+  );
   return map;
 }
 
