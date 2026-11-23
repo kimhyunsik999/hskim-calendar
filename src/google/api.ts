@@ -12,13 +12,18 @@ async function call<T>(token: string, path: string, init: RequestInit = {}, atte
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...init.headers },
   });
   if (r.status === 401) throw new AuthError('Google 로그인이 만료되었습니다. 다시 연결해주세요.');
-  if ((r.status === 403 || r.status === 429) && attempt < 4) {
+  if (r.status === 403 || r.status === 429 || r.status >= 500) {
     const body = await r.text();
-    if (/rateLimit|quota/i.test(body)) {
-      await new Promise((res) => setTimeout(res, 500 * 2 ** attempt));
+    // Calendar throttles bursts of writes ("Calendar usage limits exceeded", rateLimitExceeded, quotaExceeded).
+    // Back off exponentially up to ~1 min, as Google recommends.
+    const retryable = r.status !== 403 || /rateLimit|quota|usageLimits|usage limits/i.test(body);
+    if (retryable && attempt < 7) {
+      await new Promise((res) => setTimeout(res, 1000 * 2 ** attempt + Math.random() * 500));
       return call(token, path, init, attempt + 1);
     }
-    throw new Error(`Google API ${r.status}: ${body.slice(0, 200)}`);
+    throw new Error(
+      retryable ? 'Google 캘린더 요청 한도에 걸렸습니다. 몇 분 뒤 "근무 일정 동기화"를 다시 눌러주세요. (진행된 부분은 유지됩니다)' : `Google API ${r.status}: ${body.slice(0, 200)}`,
+    );
   }
   if (!r.ok) throw new Error(`Google API ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return (r.status === 204 ? undefined : await r.json()) as T;

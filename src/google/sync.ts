@@ -201,7 +201,7 @@ export async function syncShifts(
 
   let done = 0;
   onProgress?.(0, jobs.length);
-  await pool(jobs, 4, async (job) => {
+  await pool(jobs, 2, async (job) => {
     await job();
     onProgress?.(++done, jobs.length);
   });

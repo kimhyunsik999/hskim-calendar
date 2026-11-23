@@ -190,6 +190,12 @@ export default function App() {
         {monthMemo?.description?.trim() || <span className="muted">월별 메모</span>}
       </button>
 
+      {progress && <div className="sync-banner">⏳ {progress} · 끝날 때까지 앱을 열어두세요</div>}
+      {!progress && !busy && g.token && settings.sharedCalId && (settings.syncedVersion ?? 1) < SYNC_VERSION && (
+        <button className="reconnect" onClick={() => syncAll('근무 일정 업데이트 완료')}>
+          근무 일정 업데이트가 끝나지 않았습니다 · 이어서 하기
+        </button>
+      )}
       {!g.token && g.everConnected && (
         <button className="reconnect" onClick={g.signIn} disabled={!g.ready}>
           Google 연결이 만료되었습니다 · 다시 연결

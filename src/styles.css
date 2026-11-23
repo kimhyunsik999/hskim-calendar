@@ -93,6 +93,7 @@ main { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 
+.sync-banner { margin: 0 12px 8px; padding: 10px; border-radius: 10px; background: var(--today-bg); color: var(--fg); font-size: 14px; text-align: center; }
 .reconnect { margin: 0 12px 8px; padding: 10px; border-radius: 10px; background: #fff3bf; color: #5c3c00; font-size: 14px; }
 .toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: rgba(30,30,30,.92); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: 90vw; z-index: 50; }
 
