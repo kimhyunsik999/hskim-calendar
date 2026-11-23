@@ -378,7 +378,7 @@ export default function App() {
             const span = ev.allDay ? diffDays(ev.end, ev.start) : 0; // keep multi-day all-day length
             run(async (t) => {
               if (isICloud(ev)) {
-                await updateICloudEvent(t, sharedId!, ev.uid!, { title: x.title, date: x.date, time: x.time, minutes: x.minutes, endDate: x.time ? undefined : addDays(x.date, span) });
+                await updateICloudEvent(t, sharedId!, ev.uid!, ev.start, { title: x.title, date: x.date, time: x.time, minutes: x.minutes, endDate: x.time ? undefined : addDays(x.date, span) });
                 setTimeout(() => ext.reload(true), 4000);
                 setTimeout(() => ext.reload(true), 30000);
                 return;
@@ -400,7 +400,7 @@ export default function App() {
             if (!confirm(`"${ev.title}" 일정을 삭제할까요?`)) return;
             run(async (t) => {
               if (isICloud(ev)) {
-                await deleteICloudEvent(t, sharedId!, ev.uid!);
+                await deleteICloudEvent(t, sharedId!, ev.uid!, ev.start);
                 setTimeout(() => ext.reload(true), 4000);
                 setTimeout(() => ext.reload(true), 30000);
                 return;

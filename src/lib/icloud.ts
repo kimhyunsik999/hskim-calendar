@@ -46,8 +46,9 @@ export async function listICloudCals(token: string, calId: string): Promise<IClo
 export const createICloudEvent = (token: string, calId: string, cal: string, event: NewEvent) =>
   call<{ ok: true; calendar: string }>('/icloud/create', { token, calId, cal, event });
 
-export const updateICloudEvent = (token: string, calId: string, uid: string, event: NewEvent & { endDate?: string }) =>
-  call<{ ok: true; calendar: string }>('/icloud/update', { token, calId, uid, event });
+/** `at`: the event's current date — lets the server find events whose resource name isn't the UID. */
+export const updateICloudEvent = (token: string, calId: string, uid: string, at: string, event: NewEvent & { endDate?: string }) =>
+  call<{ ok: true; calendar: string }>('/icloud/update', { token, calId, uid, date: at, event });
 
-export const deleteICloudEvent = (token: string, calId: string, uid: string) =>
-  call<{ ok: true; calendar: string }>('/icloud/delete', { token, calId, uid });
+export const deleteICloudEvent = (token: string, calId: string, uid: string, at: string) =>
+  call<{ ok: true; calendar: string }>('/icloud/delete', { token, calId, uid, date: at });

@@ -131,21 +131,36 @@ export function buildIcs(event, uid, now = new Date()) {
 
 // --- find / edit existing events (by UID) ---
 
-/** Locate an event by UID across the writable calendars. Returns { href, etag, ics, cal } or null. */
-export async function findByUid(env, uid) {
+const utcStamp = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+
+/**
+ * Locate an event by UID across the writable calendars. Returns { href, etag, ics, cal } or null.
+ * iCloud rejects UID prop-filter queries (412), so: 1) GET "<uid>.ics" (how this app and most clients name
+ * resources); 2) otherwise a time-range REPORT around `date` and match the UID locally.
+ */
+export async function findByUid(env, uid, date) {
   const cals = await listCalendars(env);
+  for (const cal of cals) {
+    const url = new URL(`${encodeURIComponent(uid)}.ics`, cal.id.endsWith('/') ? cal.id : cal.id + '/').toString();
+    const r = await fetch(url, { headers: { Authorization: basic(env) } });
+    if (r.status === 200) return { href: url, etag: r.headers.get('etag') ?? '', ics: await r.text(), cal };
+  }
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const day = new Date(`${date}T00:00:00+09:00`);
+  const start = utcStamp(new Date(day.getTime() - 86_400_000));
+  const end = utcStamp(new Date(day.getTime() + 2 * 86_400_000));
   const body = `<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
     <d:prop><d:getetag/><c:calendar-data/></d:prop>
-    <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">
-      <c:prop-filter name="UID"><c:text-match collation="i;octet">${uid.replace(/[<&>]/g, '')}</c:text-match></c:prop-filter>
-    </c:comp-filter></c:comp-filter></c:filter>
+    <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="${start}" end="${end}"/></c:comp-filter></c:comp-filter></c:filter>
   </c:calendar-query>`;
   for (const cal of cals) {
     const xml = await dav(env, cal.id, 'REPORT', body, 1);
     for (const r of responses(xml)) {
       const ics = unxml(first(r, 'calendar-data') ?? '');
-      if (!ics.includes('BEGIN:VEVENT')) continue;
-      return { href: abs(hrefIn(r), cal.id), etag: (first(r, 'getetag') ?? '').trim(), ics, cal };
+      const found = unfold(ics)
+        .split(/\r?\n/)
+        .some((l) => l.startsWith('UID:') && l.slice(4).trim() === uid);
+      if (found) return { href: abs(hrefIn(r), cal.id), etag: (first(r, 'getetag') ?? '').trim(), ics, cal };
     }
   }
   return null;
@@ -222,7 +237,7 @@ export async function handleICloud(path, body, env) {
   if (path === '/icloud/update' || path === '/icloud/delete') {
     const uid = body.uid;
     if (typeof uid !== 'string' || !uid || uid.length > 300) throw new HttpError(400, 'bad_request', 'uid required');
-    const found = await findByUid(env, uid);
+    const found = await findByUid(env, uid, typeof body.date === 'string' ? body.date : undefined);
     if (!found) throw new HttpError(404, 'not_found', 'iCloud에서 일정을 찾지 못했습니다. (이미 삭제되었을 수 있음)');
     if (path === '/icloud/delete') {
       if (/^(RRULE|RDATE)[:;]/m.test(unfold(found.ics))) throw new HttpError(409, 'recurring', '반복 일정은 아이폰 캘린더에서 삭제해주세요.');

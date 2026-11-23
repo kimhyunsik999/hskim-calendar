@@ -105,34 +105,55 @@ describe('iCloud CalDAV', () => {
     expect(() => editIcs(rec, { title: 'x', date: '2026-11-02' })).toThrow(/반복 일정/);
   });
 
-  it('updates and deletes by UID with the ETag', async () => {
+  it('finds by "<uid>.ics" first, else by time-range + UID (iCloud rejects UID filters), and writes with the ETag', async () => {
     const puts = fakeICloud();
-    const calls: { m: string; url: string; h: Record<string, string> }[] = [];
+    const calls: { m: string; url: string; h: Record<string, string>; body?: string }[] = [];
     const prev = globalThis.fetch;
+    const ICS = 'BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:APPLE-UID\nSUMMARY:old &amp; new\nDTSTART;VALUE=DATE:20261123\nEND:VEVENT\nEND:VCALENDAR';
     vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
-      if (init.method === 'REPORT') {
-        calls.push({ m: 'REPORT', url, h: {} });
-        if (!url.includes('FAMILY-2')) return new Response('<multistatus xmlns="DAV:"></multistatus>', { status: 207 });
-        const ics = 'BEGIN:VCALENDAR&#13;\nBEGIN:VEVENT&#13;\nUID:ABC&#13;\nSUMMARY:old &amp; new&#13;\nDTSTART;VALUE=DATE:20261123&#13;\nEND:VEVENT&#13;\nEND:VCALENDAR';
+      const m = init.method ?? 'GET';
+      if (m === 'GET' && url.endsWith('.ics')) {
+        calls.push({ m, url, h: {} });
+        // Our own event lives at <uid>.ics; the Apple-made one doesn't.
+        if (url === 'https://p44-caldav.icloud.com/1234567/calendars/FAMILY-2/OURS%40hskim-calendar.ics')
+          return new Response('BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:OURS@hskim-calendar\r\nSUMMARY:테스트\r\nDTSTART;VALUE=DATE:20261123\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n', { status: 200, headers: { ETag: '"etag-ours"' } });
+        return new Response('', { status: 404 });
+      }
+      if (m === 'REPORT') {
+        calls.push({ m, url, h: {}, body: String(init.body) });
+        if (/prop-filter/.test(String(init.body))) return new Response('', { status: 412 }); // what iCloud does
+        if (!url.includes('FAMILY-1')) return new Response('<multistatus xmlns="DAV:"></multistatus>', { status: 207 });
         return new Response(
-          `<multistatus xmlns="DAV:"><response><href>/1234567/calendars/FAMILY-2/ABC.ics</href><propstat><prop><getetag>"etag-1"</getetag><calendar-data xmlns="urn:ietf:params:xml:ns:caldav">${ics.replace(/&#13;/g, '')}</calendar-data></prop></propstat></response></multistatus>`,
+          `<multistatus xmlns="DAV:"><response><href>/1234567/calendars/FAMILY-1/0F3A-random-name.ics</href><propstat><prop><getetag>"etag-apple"</getetag><calendar-data xmlns="urn:ietf:params:xml:ns:caldav">${ICS}</calendar-data></prop></propstat></response></multistatus>`,
           { status: 207 },
         );
       }
-      if (init.method === 'DELETE' || (init.method === 'PUT' && url.endsWith('ABC.ics'))) {
-        calls.push({ m: init.method!, url, h: init.headers as Record<string, string> });
+      if (m === 'DELETE' || m === 'PUT') {
+        calls.push({ m, url, h: init.headers as Record<string, string> });
         return new Response(null, { status: 204 });
       }
       return prev(url, init);
     });
-    const r = await handleICloud('/icloud/update', { token: 't', calId: 'shared', uid: 'ABC', event: { title: '새 제목', date: '2026-11-25' } }, env);
+
+    // 1) our event: direct GET, no REPORT needed
+    const r = await handleICloud('/icloud/update', { token: 't', calId: 'shared', uid: 'OURS@hskim-calendar', date: '2026-11-23', event: { title: '테스트2', date: '2026-11-23' } }, env);
     expect(r).toMatchObject({ ok: true, calendar: '가족❣️' });
     const put = calls.find((c) => c.m === 'PUT')!;
-    expect(put.url).toBe('https://p44-caldav.icloud.com/1234567/calendars/FAMILY-2/ABC.ics');
-    expect(put.h['If-Match']).toBe('"etag-1"');
-    await handleICloud('/icloud/delete', { token: 't', calId: 'shared', uid: 'ABC' }, env);
-    expect(calls.find((c) => c.m === 'DELETE')!.h['If-Match']).toBe('"etag-1"');
-    expect(puts).toHaveLength(0); // no create
+    expect(put.url).toBe('https://p44-caldav.icloud.com/1234567/calendars/FAMILY-2/OURS%40hskim-calendar.ics');
+    expect(put.h['If-Match']).toBe('"etag-ours"');
+    expect(calls.some((c) => c.m === 'REPORT')).toBe(false);
+
+    // 2) Apple-made event with a different resource name: time-range REPORT around the date
+    await handleICloud('/icloud/delete', { token: 't', calId: 'shared', uid: 'APPLE-UID', date: '2026-11-23' }, env);
+    const rep = calls.find((c) => c.m === 'REPORT')!;
+    expect(rep.body).toContain('time-range start="20261121T150000Z" end="20261124T150000Z"'); // 11/22 00:00 ~ 11/25 00:00 KST
+    const del = calls.find((c) => c.m === 'DELETE')!;
+    expect(del.url).toBe('https://p44-caldav.icloud.com/1234567/calendars/FAMILY-1/0F3A-random-name.ics');
+    expect(del.h['If-Match']).toBe('"etag-apple"');
+
+    // 3) not found without a date → 404
+    await expect(handleICloud('/icloud/delete', { token: 't', calId: 'shared', uid: 'NOPE' }, env)).rejects.toMatchObject({ status: 404 });
+    expect(puts).toHaveLength(0);
   });
 
   it('builds all-day (multi-day) events and folds long lines', () => {
