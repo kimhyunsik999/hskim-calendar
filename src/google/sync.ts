@@ -72,7 +72,11 @@ export function readExternals(desc?: string): ExtCal[] | null {
 
 const CONFIG_DATE = '2000-01-01'; // far from any month the app shows
 
-type SharedConfig = { externals?: ExtCal[] };
+type SharedConfig = {
+  externals?: ExtCal[];
+  /** iCloud (CalDAV) calendar ids shown in the app, read in real time through the Worker. */
+  icloudShow?: string[];
+};
 
 export async function readSharedConfig(token: string, mainId: string): Promise<{ id: string; config: SharedConfig } | null> {
   const [ev] = await listTagged(token, mainId, 'config');
@@ -86,10 +90,18 @@ export async function readSharedConfig(token: string, mainId: string): Promise<{
 
 export const sharedExternalsOf = (c: { config: SharedConfig } | null) => (c ? validExt(c.config.externals) : null);
 
+export const sharedICloudShowOf = (c: { config: SharedConfig } | null) =>
+  c && Array.isArray(c.config.icloudShow) ? c.config.icloudShow.filter((x) => typeof x === 'string') : null;
+
 /** Save the iCloud list for both spouses (creates the config event on first use). */
-export async function writeExternals(token: string, mainId: string, list: ExtCal[]) {
+export const writeExternals = (token: string, mainId: string, list: ExtCal[]) => writeSharedConfig(token, mainId, { externals: list });
+
+export const writeICloudShow = (token: string, mainId: string, ids: string[]) => writeSharedConfig(token, mainId, { icloudShow: ids });
+
+/** Merge a patch into the shared config event (creates it on first use). Both spouses can write it. */
+async function writeSharedConfig(token: string, mainId: string, patch: SharedConfig) {
   const cur = await readSharedConfig(token, mainId);
-  const description = JSON.stringify({ ...(cur?.config ?? {}), externals: list });
+  const description = JSON.stringify({ ...(cur?.config ?? {}), ...patch });
   if (cur) return patchEvent(token, mainId, cur.id, { description });
   return insertEvent(token, mainId, {
     summary: '⚙️ 4조 근무표 앱 설정 (삭제하지 마세요)',

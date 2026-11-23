@@ -6,18 +6,19 @@ import { MonthGrid } from './components/MonthGrid';
 import { SettingsSheet, SHARED_CAL_NAME } from './components/SettingsSheet';
 import { StatsSheet } from './components/StatsSheet';
 import { AuthError, allDay, createCalendar, deleteEvent, insertEvent, patchEvent, type CalEvent, type GEvent } from './google/api';
-import { ensureShiftCalendars, saveMonthMemo, setOverride, shareAll, syncShifts, writeExternals } from './google/sync';
+import { ensureShiftCalendars, saveMonthMemo, setOverride, shareAll, syncShifts, writeExternals, writeICloudShow } from './google/sync';
 import { addDays, diffDays, monthGrid, parts, shiftMonth, today, WEEKDAYS, ymd, type DateStr } from './lib/date';
 import { holidaysOf, type HolidayMap } from './lib/korean';
 import { baseShift, DEFAULT_COLORS, SHIFT_OPTIONS, SYNC_VERSION, textOn, type Shift, type ShiftColors } from './lib/shift';
 import { notifySpouse, refreshRegistration } from './lib/push';
 import type { ExtCal } from './lib/externalIcs';
 import { cachedICloudCals, createICloudEvent, deleteICloudEvent, listICloudCals, updateICloudEvent, type ICloudCal } from './lib/icloud';
-import { shiftCalsFor, useCalendarData, useExternalEvents, useGoogle, useSettings, useWeather, weatherLocs } from './state';
+import { shiftCalsFor, useCalendarData, useExternalEvents, useGoogle, useICloudEvents, useSettings, useWeather, weatherLocs } from './state';
 
 /** '2026-12-03' → '12/3' */
 /** iCloud (public link) events carry calendarId 'ext:…'. */
-const isICloud = (ev: CalEvent) => ev.calendarId.startsWith('ext:');
+/** iCloud events: real-time ('icloud:…') or public-link ('ext:…'). */
+const isICloud = (ev: CalEvent) => ev.calendarId.startsWith('icloud:') || ev.calendarId.startsWith('ext:');
 
 const md = (d: DateStr) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 
@@ -61,8 +62,6 @@ export default function App() {
   const wxLocs = weatherLocs(settings);
   const homeWx = useWeather(wxLocs.home);
   const workWx = useWeather(wxLocs.work);
-  const events = useMemo(() => [...data.events, ...ext.events], [data.events, ext.events]);
-  const loadError = data.error ?? ext.error;
 
   const [holidays, setHolidays] = useState<HolidayMap>({});
   useEffect(() => {
@@ -117,6 +116,28 @@ export default function App() {
 
   // Writable iCloud calendars (for "일정 추가 › 저장할 캘린더"). Empty until iCloud writing is set up on the server.
   const [icloudCals, setICloudCals] = useState<ICloudCal[]>(cachedICloudCals);
+  // With direct iCloud access, read the chosen calendars in real time and ignore the slow public links.
+  const icloudMode = icloudCals.length > 0;
+  const extNames = useMemo(() => new Set([...ext.events.map((e) => e.calendarName), ...externals.map((x) => x.name)]), [ext.events, externals]);
+  const defaultShow = useMemo(() => icloudCals.filter((c) => extNames.has(c.name)).map((c) => c.id), [icloudCals, extNames]);
+  const icloudShow = data.sharedICloudShow ?? defaultShow;
+  const ic = useICloudEvents(g.token, settings.sharedCalId, icloudMode ? icloudShow : [], from, to);
+  const events = useMemo(() => [...data.events, ...(icloudMode ? ic.events : ext.events)], [data.events, icloudMode, ic.events, ext.events]);
+  const loadError = data.error ?? (icloudMode ? ic.error : ext.error);
+  const refreshICloud = () => (icloudMode ? ic.reload() : (setTimeout(() => ext.reload(true), 4000), setTimeout(() => ext.reload(true), 30000)));
+
+  // First time in real-time mode: remember the calendars we were already showing (via public links) for both spouses.
+  const savedShow = useRef(false);
+  useEffect(() => {
+    if (savedShow.current || !g.token || !settings.sharedCalId || !canWrite || !icloudMode || data.sharedICloudShow !== null || !defaultShow.length) return;
+    savedShow.current = true;
+    writeICloudShow(g.token, settings.sharedCalId, defaultShow).then(data.reload, () => (savedShow.current = false));
+  }, [g.token, settings.sharedCalId, canWrite, icloudMode, data.sharedICloudShow, defaultShow, data.reload]);
+
+  const toggleICloudShow = (id: string, on: boolean) => {
+    const next = on ? [...new Set([...icloudShow, id])] : icloudShow.filter((x) => x !== id);
+    run((t) => writeICloudShow(t, settings.sharedCalId!, next)).then((ok) => ok && ic.reload());
+  };
   useEffect(() => {
     if (!g.token || !settings.sharedCalId) return;
     listICloudCals(g.token, settings.sharedCalId).then(setICloudCals, () => undefined);
@@ -349,8 +370,7 @@ export default function App() {
               if (target.startsWith('icloud:')) {
                 await createICloudEvent(t, sharedId!, target.slice('icloud:'.length), { title, date, time, minutes: time ? minutes : undefined });
                 // iCloud's public feed takes a moment; re-read it bypassing our cache, twice.
-                setTimeout(() => ext.reload(true), 4000);
-                setTimeout(() => ext.reload(true), 30000);
+                refreshICloud();
                 return;
               }
               const startIso = `${date}T${time}:00+09:00`;
@@ -379,8 +399,7 @@ export default function App() {
             run(async (t) => {
               if (isICloud(ev)) {
                 await updateICloudEvent(t, sharedId!, ev.uid!, ev.start, { title: x.title, date: x.date, time: x.time, minutes: x.minutes, endDate: x.time ? undefined : addDays(x.date, span) });
-                setTimeout(() => ext.reload(true), 4000);
-                setTimeout(() => ext.reload(true), 30000);
+                refreshICloud();
                 return;
               }
               const startIso = `${x.date}T${x.time}:00+09:00`;
@@ -401,8 +420,7 @@ export default function App() {
             run(async (t) => {
               if (isICloud(ev)) {
                 await deleteICloudEvent(t, sharedId!, ev.uid!, ev.start);
-                setTimeout(() => ext.reload(true), 4000);
-                setTimeout(() => ext.reload(true), 30000);
+                refreshICloud();
                 return;
               }
               await deleteEvent(t, ev.calendarId, ev.id);
@@ -439,6 +457,9 @@ export default function App() {
           externalsShared={!!(g.token && settings.sharedCalId)}
           canEditExternals={!(g.token && settings.sharedCalId) || canWrite}
           onExternals={saveExternals}
+          icloudCals={icloudCals}
+          icloudShow={icloudShow}
+          onToggleICloud={toggleICloudShow}
           calendars={data.calendars}
           connected={!!g.token}
           ready={g.ready}

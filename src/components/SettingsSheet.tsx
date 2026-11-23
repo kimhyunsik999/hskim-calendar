@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { GCalendar } from '../google/api';
 import { CLIENT_ID } from '../google/gis';
 import { ICS_PROXY, normalizeIcsUrl, type ExtCal } from '../lib/externalIcs';
+import type { ICloudCal } from '../lib/icloud';
 import { currentSubscription, disablePush, enablePush, isStandalone, notifySpouse, pushConfigured } from '../lib/push';
 import { HOME_PRESETS, leaveTime, WORK_PRESETS, type WeatherLoc } from '../lib/weather';
 import { ANCHOR, DEFAULT_COLORS, SHIFT_OPTIONS, SHIFT_TIMES, type Shift, type ShiftColors } from '../lib/shift';
@@ -22,6 +23,10 @@ type Props = {
   externalsShared: boolean;
   canEditExternals: boolean;
   onExternals: (list: ExtCal[]) => void;
+  /** Writable iCloud calendars (direct access); empty when not configured. */
+  icloudCals: ICloudCal[];
+  icloudShow: string[];
+  onToggleICloud: (id: string, on: boolean) => void;
   calendars: GCalendar[];
   connected: boolean;
   ready: boolean;
@@ -387,7 +392,31 @@ export function SettingsSheet(p: Props) {
 
       <PushSetting settings={settings} update={p.update} token={p.token} />
 
-      <ExternalCalendars list={p.externals} shared={p.externalsShared} canEdit={p.canEditExternals} onChange={p.onExternals} />
+      {p.icloudCals.length ? (
+        <section>
+          <Title help="iCloud에 직접 연결되어 일정 추가·수정·삭제가 1~2초 안에 반영됩니다. 체크한 캘린더가 두 사람 앱 달력에 함께 표시됩니다. (공개 링크는 더 이상 필요 없습니다)">
+            iCloud 캘린더
+          </Title>
+          <ul className="cal-list">
+            {p.icloudCals.map((c) => (
+              <li key={c.id}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={p.icloudShow.includes(c.id)}
+                    disabled={!p.canEditExternals || p.busy}
+                    onChange={(e) => p.onToggleICloud(c.id, e.target.checked)}
+                  />
+                  <i className="dot" style={{ background: c.color }} />
+                  {c.name}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <ExternalCalendars list={p.externals} shared={p.externalsShared} canEdit={p.canEditExternals} onChange={p.onExternals} />
+      )}
 
       <WeatherSetting settings={settings} update={p.update} />
 

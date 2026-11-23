@@ -156,6 +156,34 @@ describe('iCloud CalDAV', () => {
     expect(puts).toHaveLength(0);
   });
 
+  it('reads events of the chosen calendars in a KST date range (real-time path)', async () => {
+    fakeICloud();
+    const bodies: string[] = [];
+    const prev = globalThis.fetch;
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
+      if (init.method === 'REPORT') {
+        bodies.push(`${url} ${init.body}`);
+        return new Response(
+          `<multistatus xmlns="DAV:"><response><href>/x/a.ics</href><propstat><prop><calendar-data xmlns="urn:ietf:params:xml:ns:caldav">BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:a
+SUMMARY:수호 &amp; 지호
+DTSTART;VALUE=DATE:20261127
+END:VEVENT
+END:VCALENDAR</calendar-data></prop></propstat></response></multistatus>`,
+          { status: 207 },
+        );
+      }
+      return prev(url, init);
+    });
+    const fam = 'https://p44-caldav.icloud.com/1234567/calendars/FAMILY-1/';
+    const r = await handleICloud('/icloud/events', { token: 't', calId: 'shared', from: '2026-11-01', to: '2026-12-05', cals: [fam, 'https://evil.example/'] }, env);
+    expect(r.calendars).toHaveLength(1); // unknown ids ignored
+    expect(r.calendars[0]).toMatchObject({ id: fam, name: '가족' });
+    expect(r.calendars[0].ics[0]).toContain('SUMMARY:수호 & 지호');
+    expect(bodies[0]).toContain('time-range start="20261031T150000Z" end="20261205T150000Z"');
+  });
+
   it('builds all-day (multi-day) events and folds long lines', () => {
     const ics = buildIcs({ title: '혜연 연차', date: '2026-12-31', endDate: '2027-01-02' }, 'u1', new Date('2026-11-23T00:00:00Z'));
     expect(ics).toContain('DTSTART;VALUE=DATE:20261231');

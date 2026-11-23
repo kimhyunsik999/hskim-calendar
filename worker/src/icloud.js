@@ -36,8 +36,19 @@ const hrefIn = (xml) => (first(xml, 'href') ?? '').trim();
 const unxml = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const abs = (href, base) => new URL(unxml(href), base).toString();
 
-/** Writable VEVENT calendars of the configured iCloud account. */
-export async function listCalendars(env) {
+// Discovery takes 3 round trips; keep the result per isolate for a while.
+let calCache = null; // { at, user, list }
+const CAL_TTL = 10 * 60_000;
+
+/** Writable VEVENT calendars of the configured iCloud account (cached ~10 min). */
+export async function listCalendars(env, { fresh = false } = {}) {
+  if (!fresh && calCache && calCache.user === env.ICLOUD_USER && Date.now() - calCache.at < CAL_TTL) return calCache.list;
+  const list = await discoverCalendars(env);
+  calCache = { at: Date.now(), user: env.ICLOUD_USER, list };
+  return list;
+}
+
+async function discoverCalendars(env) {
   const principalXml = await dav(
     env,
     ROOT + '/',
@@ -216,7 +227,30 @@ export async function handleICloud(path, body, env) {
   if (typeof token !== 'string' || typeof calId !== 'string') throw new HttpError(400, 'bad_request', 'token and calId required');
   await whoCanSee(token, calId); // must be a member of the shared Google calendar
 
-  if (path === '/icloud/calendars') return { calendars: await listCalendars(env) };
+  if (path === '/icloud/calendars') return { calendars: await listCalendars(env, { fresh: true }) };
+
+  // Real-time read (instead of the slow public feed): raw VEVENT data of the chosen calendars in [from, to].
+  if (path === '/icloud/events') {
+    const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+    if (!isDate(body.from) || !isDate(body.to) || !Array.isArray(body.cals)) throw new HttpError(400, 'bad_request', 'from, to, cals required');
+    const start = utcStamp(new Date(`${body.from}T00:00:00+09:00`));
+    const end = utcStamp(new Date(new Date(`${body.to}T00:00:00+09:00`).getTime() + 86_400_000));
+    const q = `<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+      <d:prop><c:calendar-data/></d:prop>
+      <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="${start}" end="${end}"/></c:comp-filter></c:comp-filter></c:filter>
+    </c:calendar-query>`;
+    const cals = (await listCalendars(env)).filter((c) => body.cals.includes(c.id));
+    const calendars = await Promise.all(
+      cals.map(async (c) => {
+        const xml = await dav(env, c.id, 'REPORT', q, 1);
+        const ics = responses(xml)
+          .map((r) => unxml(first(r, 'calendar-data') ?? ''))
+          .filter((s) => s.includes('BEGIN:VEVENT'));
+        return { id: c.id, name: c.name, color: c.color, ics };
+      }),
+    );
+    return { calendars };
+  }
 
   if (path === '/icloud/create') {
     if (!validEvent(body.event)) throw new HttpError(400, 'bad_request', 'invalid event');

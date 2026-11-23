@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchExternal, type ExtCal } from './lib/externalIcs';
 import { fetchForecast, HOME_PRESETS, WORK_PRESETS, type Forecast, type WeatherLoc } from './lib/weather';
 import { AuthError, getCalendar, listCalendars, listEvents, normalize, subscribeCalendar, type CalEvent, type GCalendar } from './google/api';
-import { readExternals, readSharedConfig, sharedExternalsOf } from './google/sync';
+import { readExternals, readSharedConfig, sharedExternalsOf, sharedICloudShowOf } from './google/sync';
+import { parseIcs } from './lib/externalIcs';
+import { fetchICloudEvents } from './lib/icloud';
 import { canRefresh, clearToken, initGis, refreshToken, requestToken, revoke, storedToken, type Token } from './google/gis';
 import type { DateStr } from './lib/date';
 import type { Overrides, ShiftColors } from './lib/shift';
@@ -91,6 +93,52 @@ export function useWeather(loc: WeatherLoc | null) {
     return () => document.removeEventListener('visibilitychange', v);
   }, [key]); // loc is fully described by key
   return loc && f?.loc === key ? f : null;
+}
+
+// ---------- iCloud calendars, real time (CalDAV through the Worker) ----------
+
+export function useICloudEvents(token: string | null, calId: string | null, ids: string[], from: DateStr, to: DateStr) {
+  const key = `hc.icloud.${from}.${to}`;
+  const [events, setEvents] = useState<CalEvent[]>(() => load(key, []));
+  const [error, setError] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  const idsKey = ids.join('|');
+
+  useEffect(() => {
+    setEvents(load(key, []));
+  }, [key]);
+
+  useEffect(() => {
+    if (!token || !calId || !ids.length) {
+      if (!ids.length) setEvents([]);
+      return;
+    }
+    let alive = true;
+    fetchICloudEvents(token, calId, ids, from, to)
+      .then(async ({ calendars }) => {
+        const lists = await Promise.all(
+          calendars.flatMap((c) => c.ics.map((ics) => parseIcs(ics, { id: `icloud:${c.id}`, name: c.name, url: '', color: c.color }, from, to))),
+        );
+        if (!alive) return;
+        const evs = lists.flat();
+        setEvents(evs);
+        save(key, evs);
+        setError(null);
+      })
+      .catch((e: Error) => alive && setError(e.message));
+    return () => {
+      alive = false;
+    };
+  }, [token, calId, idsKey, from, to, key, nonce]);
+
+  useEffect(() => {
+    const v = () => document.visibilityState === 'visible' && reload();
+    document.addEventListener('visibilitychange', v);
+    return () => document.removeEventListener('visibilitychange', v);
+  }, [reload]);
+
+  return { events, error, reload };
 }
 
 // ---------- external (iCloud) calendars ----------
@@ -241,6 +289,8 @@ export type CalData = {
   monthMemos: CalEvent[];
   /** iCloud calendars stored in the shared calendar (null = none stored yet). */
   sharedExternals?: ExtCal[] | null;
+  /** iCloud calendar ids to show (real-time CalDAV); null = not chosen yet. */
+  sharedICloudShow?: string[] | null;
 };
 
 const EMPTY: CalData = { calendars: [], events: [], overrides: {}, monthMemos: [] };
@@ -315,6 +365,7 @@ export function useCalendarData(
         overrides,
         monthMemos: all.filter((e) => e.kind === 'monthMemo'),
         sharedExternals: sharedExternalsOf(config) ?? (main ? readExternals(main.description) : null),
+        sharedICloudShow: sharedICloudShowOf(config),
         // Shifts/overrides are drawn as badges, not as event bars.
         events: all.filter((e) => !e.kind),
       };

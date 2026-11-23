@@ -43,7 +43,13 @@ export async function listICloudCals(token: string, calId: string): Promise<IClo
   }
 }
 
-export const createICloudEvent = (token: string, calId: string, cal: string, event: NewEvent) =>
+export type ICloudEvents = { calendars: (ICloudCal & { ics: string[] })[] };
+
+/** Raw VEVENT data of the chosen calendars, straight from iCloud (no public-feed delay). */
+export const fetchICloudEvents = (token: string, calId: string, cals: string[], from: string, to: string) =>
+  call<ICloudEvents>('/icloud/events', { token, calId, cals, from, to });
+
+export const createICloudEvent =(token: string, calId: string, cal: string, event: NewEvent) =>
   call<{ ok: true; calendar: string }>('/icloud/create', { token, calId, cal, event });
 
 /** `at`: the event's current date — lets the server find events whose resource name isn't the UID. */
