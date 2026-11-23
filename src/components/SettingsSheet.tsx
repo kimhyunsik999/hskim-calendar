@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { GCalendar } from '../google/api';
 import { CLIENT_ID } from '../google/gis';
-import { ICS_PROXY } from '../lib/externalIcs';
+import { ICS_PROXY, normalizeIcsUrl } from '../lib/externalIcs';
 import { currentSubscription, disablePush, enablePush, isStandalone, notifySpouse, pushConfigured } from '../lib/push';
 import { HOME_PRESETS, leaveTime, WORK_PRESETS, type WeatherLoc } from '../lib/weather';
 import { ANCHOR, DEFAULT_COLORS, SHIFT_OPTIONS, SHIFT_TIMES, type Shift, type ShiftColors } from '../lib/shift';
@@ -157,6 +157,13 @@ function WeatherSetting({ settings, update }: { settings: Settings; update: (p: 
   );
 }
 
+/** Short, non-secret hint to tell links apart: iCloud server + last 4 chars, e.g. "p193 · …d6-ws". */
+function linkTag(url: string) {
+  const u = normalizeIcsUrl(url);
+  const host = u.match(/^https:\/\/(p\d+)-caldav\.icloud\.com/)?.[1] ?? u.replace(/^https:\/\//, '').split('/')[0];
+  return ` ${host} · …${u.slice(-4)}`;
+}
+
 function ExternalCalendars({ settings, update }: { settings: Settings; update: (p: Partial<Settings>) => void }) {
   const list = settings.externals ?? [];
   const [name, setName] = useState('가족');
@@ -181,6 +188,7 @@ function ExternalCalendars({ settings, update }: { settings: Settings; update: (
             <label>
               <i className="dot" style={{ background: c.color }} />
               {c.name}
+              <small className="muted">{linkTag(c.url)}</small>
             </label>
             <button className="btn ghost" onClick={() => confirm(`"${c.name}" 캘린더를 앱에서 뺄까요?`) && update({ externals: list.filter((x) => x.id !== c.id) })}>
               삭제
@@ -193,6 +201,11 @@ function ExternalCalendars({ settings, update }: { settings: Settings; update: (
         onSubmit={(e) => {
           e.preventDefault();
           if (!valid) return;
+          const dup = list.find((x) => normalizeIcsUrl(x.url) === normalizeIcsUrl(url));
+          if (dup) {
+            alert(`이미 "${dup.name}" 이름으로 추가된 링크입니다.`);
+            return;
+          }
           update({ externals: [...list, { id: `ext:${Date.now().toString(36)}`, name: name.trim() || 'iCloud', url: url.trim(), color }] });
           setUrl('');
         }}
