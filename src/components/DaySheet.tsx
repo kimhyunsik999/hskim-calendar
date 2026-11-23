@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CalEvent } from '../google/api';
 import { addDays, parts, WEEKDAYS, weekday, type DateStr } from '../lib/date';
-import { describe, icon, isAlert, leaveHour, shiftWeather, type Forecast, type Hour } from '../lib/weather';
+import { describe, icon, isAlert, leaveTime, shiftWeather, type Forecast, type Hour } from '../lib/weather';
 import { lunarOf, type HolidayMap } from '../lib/korean';
 import { baseShift, effectiveShift, isWork, SHIFT_OPTIONS, SHIFT_TIMES, type Overrides, type Shift } from '../lib/shift';
 import { Sheet } from './Sheet';
@@ -75,7 +75,7 @@ export function DaySheet(p: Props) {
           <h3>출퇴근 날씨</h3>
           {isWork(shift) ? (
             <>
-              {wx.leave && <WxLine label={`🏠 출근 출발 ${leaveHour(shift)}:00 · ${p.places.home ?? '집'}`} h={wx.leave} />}
+              {wx.leave && <WxLine label={`🏠 출근 출발 ${leaveTime(shift)} · ${p.places.home ?? '집'}`} h={wx.leave} />}
               {wx.off && (
                 <WxLine label={`🏭 퇴근 ${SHIFT_TIMES[shift].end}${shift === 'C' ? '(다음날)' : ''} · ${p.places.work ?? '회사'}`} h={wx.off} />
               )}

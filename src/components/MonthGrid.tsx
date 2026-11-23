@@ -4,7 +4,7 @@ import { diffDays, parts, weekday, type DateStr } from '../lib/date';
 import type { HolidayMap } from '../lib/korean';
 import { lunarLabel } from '../lib/korean';
 import { effectiveShift, type Overrides } from '../lib/shift';
-import { icon, isAlert, keyHour, type Forecast } from '../lib/weather';
+import { dayIcon, icon, isAlert, type Forecast } from '../lib/weather';
 import { ShiftBadge } from './ShiftBadge';
 
 const MAX_LANES = 4;
@@ -86,7 +86,7 @@ export function MonthGrid({ month, days, todayStr, events, overrides, holidays, 
               })}
               {w.map((d, i) => {
                 const s = effectiveShift(d, overrides);
-                const wx = forecast?.hours[keyHour(d, s)];
+                const wx = dayIcon(forecast, d, s);
                 return (
                   <div
                     key={'b' + d}

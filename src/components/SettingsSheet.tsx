@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { GCalendar } from '../google/api';
 import { CLIENT_ID } from '../google/gis';
 import { ICS_PROXY } from '../lib/externalIcs';
 import { currentSubscription, disablePush, enablePush, isStandalone, notifySpouse, pushConfigured } from '../lib/push';
-import { HOME_PRESETS, WORK_PRESETS, type WeatherLoc } from '../lib/weather';
+import { HOME_PRESETS, leaveTime, WORK_PRESETS, type WeatherLoc } from '../lib/weather';
 import { ANCHOR, DEFAULT_COLORS, SHIFT_OPTIONS, SHIFT_TIMES, type Shift, type ShiftColors } from '../lib/shift';
 import { shiftCalsFor, weatherLocs, type LocSetting, type Settings } from '../state';
 import { Sheet } from './Sheet';
@@ -33,6 +33,24 @@ type Props = {
   onClose: () => void;
 };
 
+/** Section heading with an ⓘ that reveals the (otherwise hidden) explanation. */
+function Title({ children, help }: { children: ReactNode; help?: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <h3 className="title">
+        {children}
+        {help && (
+          <button type="button" className={'help-btn' + (open ? ' on' : '')} onClick={() => setOpen((o) => !o)} aria-label="도움말" aria-expanded={open}>
+            ⓘ
+          </button>
+        )}
+      </h3>
+      {help && open && <div className="help">{help}</div>}
+    </>
+  );
+}
+
 function PushSetting({ settings, update, token }: { settings: Settings; update: (p: Partial<Settings>) => void; token: string | null }) {
   const [on, setOn] = useState<boolean | null>(null);
   const [msg, setMsg] = useState('');
@@ -54,9 +72,8 @@ function PushSetting({ settings, update, token }: { settings: Settings; update: 
   };
   return (
     <section>
-      <h3>배우자 변경 알림</h3>
-      <p className="muted">한 사람이 앱에서 근무 변경·메모를 하면 다른 사람 폰으로 푸시 알림이 갑니다. 두 분 모두 각자 폰에서 켜주세요.</p>
-      {!isStandalone() && <p className="warn">아이폰은 Safari 탭이 아니라 "홈 화면에 추가"한 앱에서 켜야 알림이 옵니다.</p>}
+      <Title help="한 사람이 앱에서 근무 변경·일정·메모를 하면 다른 사람 폰으로 푸시 알림이 갑니다. 두 분 모두 각자 폰에서 켜주세요.">배우자 변경 알림</Title>
+      {!isStandalone() && <p className="warn">홈 화면에 추가한 앱에서만 알림이 옵니다.</p>}
       <div className="row">
         <input placeholder="내 이름 (예: 현식)" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => update({ myName: name.trim() })} />
       </div>
@@ -84,7 +101,7 @@ function PushSetting({ settings, update, token }: { settings: Settings; update: 
           테스트 알림 보내기 (나에게도)
         </button>
       )}
-      {!ready && <p className="muted">Google 연결과 공유 근무 캘린더 지정이 먼저 필요합니다.</p>}
+      {!ready && <p className="muted">Google 연결 후 사용할 수 있습니다.</p>}
       {msg && <p className="muted">{msg}</p>}
     </section>
   );
@@ -128,12 +145,13 @@ function WeatherSetting({ settings, update }: { settings: Settings; update: (p: 
   );
   return (
     <section>
-      <h3>출퇴근 날씨</h3>
+      <Title
+        help={`출근: 집에서 출발하는 시각(근무 시작 1시간 30분 전 — A ${leaveTime('A')} · B ${leaveTime('B')} · C ${leaveTime('C')}) 날씨를 날짜 칸 아이콘으로 표시합니다. 퇴근: 회사의 퇴근 시각 날씨는 날짜를 누르면 보입니다. 비·눈 가능성이 높거나 영하 5도 이하면 빨갛게 강조. 현재 위치로 저장하면 그 위치로 고정됩니다. (Open-Meteo, 최대 14일)`}
+      >
+        출퇴근 날씨
+      </Title>
       {row('home', '🏠 집 (출근)', HOME_PRESETS, locs.home)}
       {row('work', '🏭 회사 (퇴근)', WORK_PRESETS, locs.work)}
-      <p className="muted">
-        출근: 집에서 출발하는 시각(근무 시작 1시간 전 — A 06시 · B 14시 · C 22시) 날씨를 날짜 칸 아이콘으로 표시합니다. 퇴근: 회사의 퇴근 시각 날씨는 날짜를 누르면 보입니다. 비·눈 가능성이 높거나 영하 5도 이하면 빨갛게 강조. (Open-Meteo, 최대 14일)
-      </p>
       {msg && <p className="muted">{msg}</p>}
     </section>
   );
@@ -147,10 +165,15 @@ function ExternalCalendars({ settings, update }: { settings: Settings; update: (
   const valid = /^(webcal|https):\/\/\S+$/i.test(url.trim());
   return (
     <section>
-      <h3>iCloud 캘린더 (공개 링크)</h3>
-      <p className="muted">
-        아이폰 캘린더 앱 › 캘린더 목록 › 해당 캘린더 ⓘ › <b>공개 캘린더</b> 켜기 › 링크 공유로 복사한 주소를 붙여넣으세요. (공유받은 캘린더는 만든 사람만 공개로 바꿀 수 있습니다)
-      </p>
+      <Title
+        help={
+          <>
+            아이폰 캘린더 앱 › 캘린더 목록 › 해당 캘린더 ⓘ › <b>공개 캘린더</b> 켜기 › 링크 공유로 복사한 주소를 붙여넣으세요. 공유받은 캘린더는 만든 사람만 공개로 바꿀 수 있습니다. 이 설정은 기기마다 따로 저장됩니다.
+          </>
+        }
+      >
+        iCloud 캘린더
+      </Title>
       {!ICS_PROXY && <p className="warn">iCloud 중계 서버가 아직 설정되지 않았습니다.</p>}
       <ul className="cal-list">
         {list.map((c) => (
@@ -233,8 +256,9 @@ export function SettingsSheet(p: Props) {
       {p.connected && (
         <>
           <section>
-            <h3>공유 근무 캘린더</h3>
-            <p className="muted">근무 일정·근무 변경·메모가 저장되는 Google 캘린더입니다. 부부가 같은 캘린더를 지정하면 함께 보고 편집합니다.</p>
+            <Title help="근무 변경·메모가 저장되는 Google 캘린더입니다. 부부가 같은 캘린더를 지정하면 함께 보고 편집합니다. 한 개만 지정합니다(여러 캘린더 표시는 아래 '달력에 표시할 캘린더'). 공유하면 근무 캘린더 4개도 함께 공유되고, 배우자용 링크를 열면 이 캘린더가 자동 지정됩니다.">
+              공유 근무 캘린더
+            </Title>
             <select value={settings.sharedCalId ?? ''} onChange={(e) => p.update({ sharedCalId: e.target.value || null })}>
               <option value="">선택 안 함</option>
               {writable.map((c) => (
@@ -264,14 +288,15 @@ export function SettingsSheet(p: Props) {
             )}
             {shared && (
               <button className="btn ghost wide" onClick={() => copy(inviteLink, 'invite')}>
-                {copied === 'invite' ? '복사됨 ✓' : '배우자용 앱 링크 복사 (열면 이 캘린더가 자동 지정)'}
+                {copied === 'invite' ? '복사됨 ✓' : '배우자용 앱 링크 복사'}
               </button>
             )}
           </section>
 
           <section>
-            <h3>알람 · 근무 일정 동기화</h3>
-            <p className="muted">근무를 Google 캘린더 4개(4조 A 주간 · B 오후 · C 야간 · 휴무)에 색깔별로 넣고, 근무 시작 전에 알림이 오게 합니다. 아이폰 설정 › 캘린더 › 계정에 Google 계정을 추가하면 아이폰 기본 캘린더와 알림에도 나타납니다.</p>
+            <Title help="근무를 Google 캘린더 4개(4조 A 주간 · B 오후 · C 야간 · 휴무)에 색깔별로 넣고, 근무 시작 전에 알림이 오게 합니다. 아이폰 설정 › 캘린더 › 계정에 Google 계정을 추가하면 아이폰 기본 캘린더와 알림에도 나타납니다. 알림 시간이나 색을 바꾼 뒤에는 동기화를 다시 눌러주세요.">
+              알람 · 근무 일정 동기화
+            </Title>
             <div className="row">
               <label>알림</label>
               <select value={settings.reminderMin} onChange={(e) => p.update({ reminderMin: Number(e.target.value) })}>
@@ -332,7 +357,9 @@ export function SettingsSheet(p: Props) {
       <WeatherSetting settings={settings} update={p.update} />
 
       <section>
-        <h3>근무 색상</h3>
+        <Title help="앱에는 바로 적용됩니다. 아이폰·구글 캘린더 색은 '근무 일정 동기화'를 누르면 바뀝니다. 연차는 휴무 캘린더에 들어가므로 아이폰 캘린더에서는 휴무 색으로 보입니다. 아이폰 캘린더 색이 다르게 보이면 아이폰 캘린더 앱에서 해당 캘린더 ⓘ로 직접 바꿀 수 있습니다.">
+          근무 색상
+        </Title>
         <div className="color-grid">
           {SHIFT_OPTIONS.map((s) => (
             <label key={s} className="color-item">
@@ -350,14 +377,10 @@ export function SettingsSheet(p: Props) {
         <button className="btn ghost wide" onClick={() => p.update({ colors: { ...DEFAULT_COLORS } })}>
           기본 색으로 되돌리기
         </button>
-        <p className="muted">
-          앱에는 바로 적용됩니다. 아이폰·구글 캘린더 색은 "근무 일정 동기화"를 누르면 바뀝니다. (연차는 휴무 캘린더에 들어가므로 아이폰 캘린더에서는 휴무 색으로 보입니다)
-        </p>
       </section>
 
       <section>
-        <h3>아이폰 캘린더 구독 (Google 없이)</h3>
-        <p className="muted">기본 4조 근무 패턴만 들어 있는 구독 링크입니다. 근무 변경은 반영되지 않습니다.</p>
+        <Title help="Google 없이 아이폰 캘린더에 기본 4조 근무 패턴만 넣는 구독 링크입니다. 근무 변경은 반영되지 않습니다.">아이폰 캘린더 구독 (Google 없이)</Title>
         <button className="btn ghost wide" onClick={() => copy(icsLink, 'ics')}>
           {copied === 'ics' ? '복사됨 ✓' : '구독 링크 복사'}
         </button>
@@ -366,9 +389,12 @@ export function SettingsSheet(p: Props) {
         </a>
       </section>
 
-      <section className="muted small">
-        4조 · 24일 주기 (A6 휴2 B6 휴2 C6 휴2), 기준 {ANCHOR} = A 1일차 · A {SHIFT_TIMES.A.start}-{SHIFT_TIMES.A.end} · B {SHIFT_TIMES.B.start}-
-        {SHIFT_TIMES.B.end} · C {SHIFT_TIMES.C.start}-{SHIFT_TIMES.C.end}
+      <section>
+        <Title
+          help={`24일 주기 (A6 휴2 B6 휴2 C6 휴2), 기준 ${ANCHOR} = A 1일차. A ${SHIFT_TIMES.A.start}-${SHIFT_TIMES.A.end} · B ${SHIFT_TIMES.B.start}-${SHIFT_TIMES.B.end} · C ${SHIFT_TIMES.C.start}-${SHIFT_TIMES.C.end}(다음날)`}
+        >
+          4조 근무 패턴
+        </Title>
       </section>
     </Sheet>
   );

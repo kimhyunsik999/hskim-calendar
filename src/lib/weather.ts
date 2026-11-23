@@ -14,8 +14,8 @@ export const HOME_PRESETS: WeatherLoc[] = [{ id: 'gwangju-gg', name: '경기 광
 /** @deprecated kept for older settings; same as WORK_PRESETS */
 export const WEATHER_PRESETS = WORK_PRESETS;
 
-/** Hours before shift start that you leave home. */
-export const LEAVE_BEFORE_H = 1;
+/** Minutes before shift start that you leave home (user: "보통 한시간반 잡고 출발"). */
+export const LEAVE_BEFORE_MIN = 90;
 
 export type Hour = { t: number; p: number; code: number; day: boolean };
 /** Keyed by 'YYYY-MM-DDTHH' (Korea time). */
@@ -63,17 +63,34 @@ export const describe = (code: number) => DESC.find(([max]) => code <= max)?.[1]
 
 const hourOf = (hhmm: string) => Number(hhmm.slice(0, 2));
 const pad2 = (n: number) => String(n).padStart(2, '0');
+const toMin = (hhmm: string) => hourOf(hhmm) * 60 + Number(hhmm.slice(3, 5));
 
-/** Hour you leave home for a work day ('HH'), e.g. A 07:00 → '06'. */
-export const leaveHour = (shift: 'A' | 'B' | 'C') => pad2((hourOf(SHIFT_TIMES[shift].start) - LEAVE_BEFORE_H + 24) % 24);
+/** Time you leave home for a work day ('HH:MM'), e.g. A 07:00 − 1:30 → '05:30'. */
+export function leaveTime(shift: 'A' | 'B' | 'C'): string {
+  const m = (toMin(SHIFT_TIMES[shift].start) - LEAVE_BEFORE_MIN + 1440) % 1440;
+  return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+}
 
-/** The hour shown on the month grid: leaving home on work days, noon on days off. */
-export function keyHour(date: DateStr, shift: Shift): string {
-  return `${date}T${isWork(shift) ? leaveHour(shift) : '12'}`;
+/** Worse of two hourly forecasts — used when departure falls between two hours (e.g. 05:30). */
+const worse = (a: Hour, b: Hour): Hour => ({ t: Math.min(a.t, b.t), p: Math.max(a.p, b.p), code: Math.max(a.code, b.code), day: a.day });
+
+/** Forecast at an 'HH:MM' on a date: exact hour, or the worse of the two surrounding hours. */
+function at(f: Forecast | null, date: DateStr, hhmm: string): Hour | undefined {
+  if (!f) return undefined;
+  const h = hourOf(hhmm);
+  const a = f.hours[`${date}T${pad2(h)}`];
+  if (hhmm.endsWith(':00') || h === 23) return a;
+  const b = f.hours[`${date}T${pad2(h + 1)}`];
+  return a && b ? worse(a, b) : (a ?? b);
+}
+
+/** What the month grid shows: leaving home on work days, noon on days off. */
+export function dayIcon(home: Forecast | null, date: DateStr, shift: Shift): Hour | undefined {
+  return isWork(shift) ? at(home, date, leaveTime(shift)) : home?.hours[`${date}T12`];
 }
 
 /**
- * 출근 = home forecast when leaving (1h before start); 퇴근 = work forecast at shift end
+ * 출근 = home forecast when leaving (1:30 before start); 퇴근 = work forecast at shift end
  * (next morning for C). Days off: home at noon.
  */
 export function shiftWeather(home: Forecast | null, work: Forecast | null, date: DateStr, shift: Shift, nextDate: DateStr) {
@@ -83,8 +100,8 @@ export function shiftWeather(home: Forecast | null, work: Forecast | null, date:
   }
   const { start, end } = SHIFT_TIMES[shift];
   const endDate = end <= start ? nextDate : date;
-  const leave = home?.hours[keyHour(date, shift)];
-  const off = work?.hours[`${endDate}T${pad2(hourOf(end))}`];
+  const leave = at(home, date, leaveTime(shift));
+  const off = at(work, endDate, end);
   return leave || off ? { leave, off } : null;
 }
 
