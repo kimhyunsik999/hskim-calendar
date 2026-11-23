@@ -9,7 +9,7 @@ import { ensureShiftCalendars, saveMonthMemo, setOverride, shareAll, syncShifts 
 import { addDays, monthGrid, parts, shiftMonth, today, WEEKDAYS, ymd, type DateStr } from './lib/date';
 import { holidaysOf, type HolidayMap } from './lib/korean';
 import { DEFAULT_COLORS, SHIFT_OPTIONS, SYNC_VERSION, textOn, type Shift, type ShiftColors } from './lib/shift';
-import { shiftCalsFor, useCalendarData, useExternalEvents, useGoogle, useSettings, useWeather, weatherLocOf } from './state';
+import { shiftCalsFor, useCalendarData, useExternalEvents, useGoogle, useSettings, useWeather, weatherLocs } from './state';
 
 type Panel = { kind: 'day'; date: DateStr } | { kind: 'settings' } | { kind: 'stats' } | { kind: 'memo' } | null;
 
@@ -41,8 +41,9 @@ export default function App() {
   const to = days[days.length - 1];
   const data = useCalendarData(g.token, settings, update, from, to, g.expire);
   const ext = useExternalEvents(settings.externals, from, to);
-  const wxLoc = weatherLocOf(settings);
-  const forecast = useWeather(wxLoc);
+  const wxLocs = weatherLocs(settings);
+  const homeWx = useWeather(wxLocs.home);
+  const workWx = useWeather(wxLocs.work);
   const events = useMemo(() => [...data.events, ...ext.events], [data.events, ext.events]);
   const loadError = data.error ?? ext.error;
 
@@ -187,7 +188,7 @@ export default function App() {
           events={events}
           overrides={data.overrides}
           holidays={holidays}
-          forecast={forecast}
+          forecast={homeWx}
           onPick={(date) => setPanel({ kind: 'day', date })}
         />
       </main>
@@ -216,8 +217,9 @@ export default function App() {
           overrides={data.overrides}
           holidays={holidays}
           sharedCalId={sharedId}
-          forecast={forecast}
-          weatherPlace={wxLoc?.name}
+          homeWx={homeWx}
+          workWx={workWx}
+          places={{ home: wxLocs.home?.name, work: wxLocs.work?.name }}
           canEdit={canEdit}
           busy={busy}
           onClose={() => setPanel(null)}

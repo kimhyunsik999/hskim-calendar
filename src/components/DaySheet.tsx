@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CalEvent } from '../google/api';
 import { addDays, parts, WEEKDAYS, weekday, type DateStr } from '../lib/date';
-import { describe, icon, isAlert, shiftWeather, type Forecast, type Hour } from '../lib/weather';
+import { describe, icon, isAlert, leaveHour, shiftWeather, type Forecast, type Hour } from '../lib/weather';
 import { lunarOf, type HolidayMap } from '../lib/korean';
 import { baseShift, effectiveShift, isWork, SHIFT_OPTIONS, SHIFT_TIMES, type Overrides, type Shift } from '../lib/shift';
 import { Sheet } from './Sheet';
@@ -19,8 +19,9 @@ type Props = {
   onOverride: (date: DateStr, s: Shift | null) => void;
   onAddMemo: (date: DateStr, title: string, time: string) => void;
   onDelete: (ev: CalEvent) => void;
-  forecast: Forecast | null;
-  weatherPlace?: string;
+  homeWx: Forecast | null;
+  workWx: Forecast | null;
+  places: { home?: string; work?: string };
 };
 
 function WxLine({ label, h }: { label: string; h: Hour }) {
@@ -41,7 +42,7 @@ export function DaySheet(p: Props) {
   const dayEvents = p.events
     .filter((e) => e.start <= date && e.end >= date)
     .sort((a, b) => Number(b.allDay) - Number(a.allDay) || (a.time ?? '').localeCompare(b.time ?? ''));
-  const wx = shiftWeather(p.forecast, date, shift, addDays(date, 1));
+  const wx = shiftWeather(p.homeWx, p.workWx, date, shift, addDays(date, 1));
   const [title, setTitle] = useState('');
   const [time, setTime] = useState('');
 
@@ -71,14 +72,16 @@ export function DaySheet(p: Props) {
 
       {wx && (
         <section className="day-wx">
-          <h3>날씨{p.weatherPlace ? ` · ${p.weatherPlace}` : ''}</h3>
+          <h3>출퇴근 날씨</h3>
           {isWork(shift) ? (
             <>
-              <WxLine label={`출근 ${SHIFT_TIMES[shift].start}`} h={wx.start} />
-              {wx.end && <WxLine label={`퇴근 ${SHIFT_TIMES[shift].end}${shift === 'C' ? ' (다음날)' : ''}`} h={wx.end} />}
+              {wx.leave && <WxLine label={`🏠 출근 출발 ${leaveHour(shift)}:00 · ${p.places.home ?? '집'}`} h={wx.leave} />}
+              {wx.off && (
+                <WxLine label={`🏭 퇴근 ${SHIFT_TIMES[shift].end}${shift === 'C' ? '(다음날)' : ''} · ${p.places.work ?? '회사'}`} h={wx.off} />
+              )}
             </>
           ) : (
-            <WxLine label="낮 12시" h={wx.start} />
+            wx.leave && <WxLine label={`🏠 낮 12시 · ${p.places.home ?? '집'}`} h={wx.leave} />
           )}
         </section>
       )}

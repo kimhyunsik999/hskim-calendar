@@ -2,9 +2,9 @@ import { useState } from 'react';
 import type { GCalendar } from '../google/api';
 import { CLIENT_ID } from '../google/gis';
 import { ICS_PROXY } from '../lib/externalIcs';
-import { WEATHER_PRESETS } from '../lib/weather';
+import { HOME_PRESETS, WORK_PRESETS, type WeatherLoc } from '../lib/weather';
 import { ANCHOR, DEFAULT_COLORS, SHIFT_OPTIONS, SHIFT_TIMES, type Shift, type ShiftColors } from '../lib/shift';
-import { shiftCalsFor, type Settings } from '../state';
+import { shiftCalsFor, weatherLocs, type LocSetting, type Settings } from '../state';
 import { Sheet } from './Sheet';
 import { ShiftBadge } from './ShiftBadge';
 
@@ -32,36 +32,49 @@ type Props = {
 };
 
 function WeatherSetting({ settings, update }: { settings: Settings; update: (p: Partial<Settings>) => void }) {
-  const cur = settings.weather?.id ?? 'icheon';
+  const locs = weatherLocs(settings);
+  const w = settings.weather ?? {};
   const [msg, setMsg] = useState('');
-  const pick = (id: string) => {
-    if (id !== 'gps') return update({ weather: { id } });
+  const set = (which: 'home' | 'work', v: LocSetting) => update({ weather: { home: w.home, work: w.work ?? (w.id ? { id: w.id, lat: w.lat, lon: w.lon } : undefined), [which]: v } });
+  const pick = (which: 'home' | 'work', id: string) => {
+    if (id === 'gps') return; // already saved
+    if (id !== 'gps-new') return set(which, { id });
     if (!navigator.geolocation) return setMsg('이 기기에서 위치를 사용할 수 없습니다.');
     setMsg('위치 확인 중…');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         // ~1km precision is plenty for a forecast and avoids storing an exact location.
         const r = (n: number) => Math.round(n * 100) / 100;
-        update({ weather: { id: 'gps', lat: r(pos.coords.latitude), lon: r(pos.coords.longitude) } });
-        setMsg('');
+        set(which, { id: 'gps', lat: r(pos.coords.latitude), lon: r(pos.coords.longitude) });
+        setMsg('현재 위치를 저장했습니다. (이후 이 위치로 고정)');
       },
       () => setMsg('위치 권한이 거부되었습니다.'),
       { timeout: 15000 },
     );
   };
-  return (
-    <section>
-      <h3>출근길 날씨</h3>
-      <select value={cur} onChange={(e) => pick(e.target.value)}>
-        {WEATHER_PRESETS.map((w) => (
-          <option key={w.id} value={w.id}>
-            {w.name}
+  const row = (which: 'home' | 'work', label: string, presets: WeatherLoc[], cur: WeatherLoc | null) => (
+    <div className="row">
+      <label>{label}</label>
+      <select value={cur?.id ?? 'off'} onChange={(e) => pick(which, e.target.value)}>
+        {presets.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
           </option>
         ))}
-        <option value="gps">현재 위치 사용</option>
+        {cur?.id === 'gps' && <option value="gps">저장한 위치</option>}
+        <option value="gps-new">{cur?.id === 'gps' ? '현재 위치로 다시 저장' : '현재 위치로 저장'}</option>
         <option value="off">표시 안 함</option>
       </select>
-      <p className="muted">근무일은 출근 시각(A 07시 · B 15시 · C 23시), 휴무일은 낮 12시 예보를 날짜 칸에 아이콘으로 보여줍니다. 비·눈 가능성이 높거나 영하 5도 이하면 빨갛게 강조됩니다. (Open-Meteo, 최대 14일)</p>
+    </div>
+  );
+  return (
+    <section>
+      <h3>출퇴근 날씨</h3>
+      {row('home', '🏠 집 (출근)', HOME_PRESETS, locs.home)}
+      {row('work', '🏭 회사 (퇴근)', WORK_PRESETS, locs.work)}
+      <p className="muted">
+        출근: 집에서 출발하는 시각(근무 시작 1시간 전 — A 06시 · B 14시 · C 22시) 날씨를 날짜 칸 아이콘으로 표시합니다. 퇴근: 회사의 퇴근 시각 날씨는 날짜를 누르면 보입니다. 비·눈 가능성이 높거나 영하 5도 이하면 빨갛게 강조. (Open-Meteo, 최대 14일)
+      </p>
       {msg && <p className="muted">{msg}</p>}
     </section>
   );

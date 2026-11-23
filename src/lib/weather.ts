@@ -4,10 +4,18 @@ import { isWork, SHIFT_TIMES, type Shift } from './shift';
 
 export type WeatherLoc = { id: string; name: string; lat: number; lon: number };
 
-export const WEATHER_PRESETS: WeatherLoc[] = [
-  { id: 'icheon', name: 'SK하이닉스 이천캠퍼스', lat: 37.258, lon: 127.486 },
-  { id: 'cheongju', name: 'SK하이닉스 청주캠퍼스', lat: 36.665, lon: 127.404 },
+/** 회사 (퇴근 시각 날씨). */
+export const WORK_PRESETS: WeatherLoc[] = [
+  { id: 'icheon', name: '이천캠퍼스', lat: 37.258, lon: 127.486 },
+  { id: 'cheongju', name: '청주캠퍼스', lat: 36.665, lon: 127.404 },
 ];
+/** 집 (출근 출발 시각 날씨). */
+export const HOME_PRESETS: WeatherLoc[] = [{ id: 'gwangju-gg', name: '경기 광주', lat: 37.429, lon: 127.255 }];
+/** @deprecated kept for older settings; same as WORK_PRESETS */
+export const WEATHER_PRESETS = WORK_PRESETS;
+
+/** Hours before shift start that you leave home. */
+export const LEAVE_BEFORE_H = 1;
 
 export type Hour = { t: number; p: number; code: number; day: boolean };
 /** Keyed by 'YYYY-MM-DDTHH' (Korea time). */
@@ -53,25 +61,31 @@ export const DESC: [number, string][] = [
 ];
 export const describe = (code: number) => DESC.find(([max]) => code <= max)?.[1] ?? '';
 
-const hourOf = (hhmm: string) => hhmm.slice(0, 2);
+const hourOf = (hhmm: string) => Number(hhmm.slice(0, 2));
+const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** The hour that matters for a day: shift start on work days, noon on days off. */
+/** Hour you leave home for a work day ('HH'), e.g. A 07:00 → '06'. */
+export const leaveHour = (shift: 'A' | 'B' | 'C') => pad2((hourOf(SHIFT_TIMES[shift].start) - LEAVE_BEFORE_H + 24) % 24);
+
+/** The hour shown on the month grid: leaving home on work days, noon on days off. */
 export function keyHour(date: DateStr, shift: Shift): string {
-  return `${date}T${isWork(shift) ? hourOf(SHIFT_TIMES[shift].start) : '12'}`;
+  return `${date}T${isWork(shift) ? leaveHour(shift) : '12'}`;
 }
 
-/** Forecast for the shift start and end (end may be the next morning for C). */
-export function shiftWeather(f: Forecast | null, date: DateStr, shift: Shift, nextDate: DateStr) {
-  if (!f) return null;
+/**
+ * 출근 = home forecast when leaving (1h before start); 퇴근 = work forecast at shift end
+ * (next morning for C). Days off: home at noon.
+ */
+export function shiftWeather(home: Forecast | null, work: Forecast | null, date: DateStr, shift: Shift, nextDate: DateStr) {
   if (!isWork(shift)) {
-    const noon = f.hours[`${date}T12`];
-    return noon ? { start: noon } : null;
+    const noon = home?.hours[`${date}T12`];
+    return noon ? { leave: noon } : null;
   }
   const { start, end } = SHIFT_TIMES[shift];
   const endDate = end <= start ? nextDate : date;
-  const s = f.hours[`${date}T${hourOf(start)}`];
-  const e = f.hours[`${endDate}T${hourOf(end)}`];
-  return s ? { start: s, end: e } : null;
+  const leave = home?.hours[keyHour(date, shift)];
+  const off = work?.hours[`${endDate}T${pad2(hourOf(end))}`];
+  return leave || off ? { leave, off } : null;
 }
 
 /** Worth flagging: rain/snow likely or freezing. */

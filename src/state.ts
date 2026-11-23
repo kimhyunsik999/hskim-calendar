@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchExternal, type ExtCal } from './lib/externalIcs';
-import { fetchForecast, WEATHER_PRESETS, type Forecast, type WeatherLoc } from './lib/weather';
+import { fetchForecast, HOME_PRESETS, WORK_PRESETS, type Forecast, type WeatherLoc } from './lib/weather';
 import { AuthError, listCalendars, listEvents, normalize, subscribeCalendar, type CalEvent, type GCalendar } from './google/api';
 import { canRefresh, clearToken, initGis, refreshToken, requestToken, revoke, storedToken, type Token } from './google/gis';
 import type { DateStr } from './lib/date';
@@ -41,31 +41,43 @@ export type Settings = {
   colors?: Partial<ShiftColors>;
   /** iCloud etc. calendars added by public ICS link (this device). */
   externals?: ExtCal[];
-  /** Weather location: a preset id, 'gps' (custom coords), or 'off'. Default 이천. */
-  weather?: { id: string; lat?: number; lon?: number };
+  /** Weather: 집 (출근 출발) and 회사 (퇴근). Each a preset id, 'gps' (saved coords) or 'off'. */
+  weather?: { home?: LocSetting; work?: LocSetting; /** legacy single location = work */ id?: string; lat?: number; lon?: number };
 };
+
+export type LocSetting = { id: string; lat?: number; lon?: number };
 
 // ---------- weather ----------
 
-export function weatherLocOf(s: Settings): WeatherLoc | null {
-  const w = s.weather ?? { id: 'icheon' };
+function resolveLoc(w: LocSetting, presets: WeatherLoc[]): WeatherLoc | null {
   if (w.id === 'off') return null;
-  if (w.id === 'gps' && w.lat != null && w.lon != null) return { id: 'gps', name: '현재 위치', lat: w.lat, lon: w.lon };
-  return WEATHER_PRESETS.find((p) => p.id === w.id) ?? WEATHER_PRESETS[0];
+  if (w.id === 'gps') return w.lat != null && w.lon != null ? { id: 'gps', name: '저장한 위치', lat: w.lat, lon: w.lon } : null;
+  return presets.find((p) => p.id === w.id) ?? presets[0];
+}
+
+export function weatherLocs(s: Settings): { home: WeatherLoc | null; work: WeatherLoc | null } {
+  const w = s.weather ?? {};
+  const legacyWork = w.id ? { id: w.id, lat: w.lat, lon: w.lon } : undefined;
+  return {
+    home: resolveLoc(w.home ?? { id: HOME_PRESETS[0].id }, HOME_PRESETS),
+    work: resolveLoc(w.work ?? legacyWork ?? { id: WORK_PRESETS[0].id }, WORK_PRESETS),
+  };
 }
 
 export function useWeather(loc: WeatherLoc | null) {
-  const [f, setF] = useState<Forecast | null>(() => load<Forecast | null>('hc.weather', null));
   const key = loc ? `${loc.lat},${loc.lon}` : '';
+  const ck = `hc.wx.${key}`;
+  const [f, setF] = useState<Forecast | null>(() => (key ? load<Forecast | null>(ck, null) : null));
   useEffect(() => {
     if (!loc) return;
     const refresh = () => {
-      const cur = load<Forecast | null>('hc.weather', null);
-      if (cur && cur.loc === key && Date.now() - cur.at < 60 * 60_000) return setF(cur);
+      const cur = load<Forecast | null>(ck, null);
+      if (cur && Date.now() - cur.at < 60 * 60_000) return setF(cur);
+      if (cur) setF(cur); // show stale while refreshing
       fetchForecast(loc).then(
         (n) => {
           setF(n);
-          save('hc.weather', n);
+          save(ck, n);
         },
         () => undefined, // offline: keep the cached forecast
       );
