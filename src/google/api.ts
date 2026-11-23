@@ -110,6 +110,8 @@ export type GEvent = {
   end: { date?: string; dateTime?: string };
   extendedProperties?: { shared?: Record<string, string> };
   reminders?: { useDefault: boolean; overrides?: { method: string; minutes: number }[] };
+  /** Set on instances of a repeating event (singleEvents=true). */
+  recurringEventId?: string;
 };
 
 export async function listEvents(
@@ -175,6 +177,12 @@ export type CalEvent = {
   color: string;
   kind?: Kind;
   shift?: Shift;
+  /** Timed events: length in minutes. */
+  minutes?: number;
+  /** Part of a repeating series. */
+  recurring?: boolean;
+  /** iCalendar UID (iCloud events) — used to edit them through the Worker. */
+  uid?: string;
 };
 
 const EVENT_COLORS: Record<string, string> = {
@@ -211,5 +219,7 @@ export function normalize(e: GEvent, cal: { id: string; name: string; color: str
     color: (e.colorId && EVENT_COLORS[e.colorId]) || cal.color,
     kind: isOurs ? (shared?.kind as Kind) : undefined,
     shift: isOurs ? (shared?.shift as Shift | undefined) : undefined,
+    minutes: allDayEv ? undefined : Math.round((Date.parse(e.end.dateTime!) - Date.parse(e.start.dateTime!)) / 60000),
+    recurring: !!e.recurringEventId,
   };
 }

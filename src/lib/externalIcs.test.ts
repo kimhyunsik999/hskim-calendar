@@ -79,3 +79,13 @@ describe('external ICS', () => {
     expect(evs.every((e) => e.color === CAL.color && e.calendarName === '가족')).toBe(true);
   });
 });
+
+describe('external ICS naming', () => {
+  it("prefers the feed's X-WR-CALNAME over the settings label", async () => {
+    const ics = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nX-WR-CALNAME:가족❣️\r\nBEGIN:VEVENT\r\nUID:a\r\nDTSTART;VALUE=DATE:20261123\r\nDTEND;VALUE=DATE:20261124\r\nSUMMARY:테스트\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n';
+    const [ev] = await parseIcs(ics, { id: 'ext:x', name: '가족', url: '', color: '#000' }, '2026-11-01', '2026-11-30');
+    expect(ev.calendarName).toBe('가족❣️');
+    expect(ev.uid).toBe('a');
+    expect(ev.recurring).toBe(false);
+  });
+});

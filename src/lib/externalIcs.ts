@@ -24,6 +24,9 @@ function point(t: ICALTime): { ms: number; date: DateStr; time?: string } {
 export async function parseIcs(text: string, cal: ExtCal, from: DateStr, to: DateStr): Promise<CalEvent[]> {
   const { default: ICAL } = await import('ical.js');
   const root = new ICAL.Component(ICAL.parse(text));
+  // The feed's own name (e.g. "가족❣️") beats the label typed in settings, so look-alike calendars stay distinct.
+  const feedName = String(root.getFirstPropertyValue('x-wr-calname') ?? '').trim();
+  const calName = feedName || cal.name;
   for (const tz of root.getAllSubcomponents('vtimezone')) {
     try {
       ICAL.TimezoneService.register(tz);
@@ -40,7 +43,7 @@ export async function parseIcs(text: string, cal: ExtCal, from: DateStr, to: Dat
   const rangeEnd = Date.parse(`${addDays(to, 1)}T00:00:00+09:00`);
   const out: CalEvent[] = [];
 
-  const add = (uid: string, summary: string, s: ICALTime, e: ICALTime | null) => {
+  const add = (uid: string, summary: string, s: ICALTime, e: ICALTime | null, recurring = false) => {
     const a = point(s);
     const b = e ? point(e) : a;
     const endMs = e ? b.ms : a.ms + (s.isDate ? 86_400_000 : 0);
@@ -52,13 +55,16 @@ export async function parseIcs(text: string, cal: ExtCal, from: DateStr, to: Dat
     out.push({
       id: `${uid}@${a.ms}`,
       calendarId: cal.id,
-      calendarName: cal.name,
+      calendarName: calName,
       title: summary || '(제목 없음)',
       start: a.date,
       end,
       allDay: s.isDate,
       time: a.time,
       color: cal.color,
+      uid,
+      recurring,
+      minutes: s.isDate ? undefined : Math.round((endMs - a.ms) / 60000),
     });
   };
 
@@ -72,7 +78,7 @@ export async function parseIcs(text: string, cal: ExtCal, from: DateStr, to: Dat
     for (let n = 0, next = it.next(); next && n < 20_000; n++, next = it.next()) {
       const d = ev.getOccurrenceDetails(next);
       if (point(d.startDate).ms >= rangeEnd) break;
-      add(ev.uid, d.item.summary, d.startDate, d.endDate);
+      add(ev.uid, d.item.summary, d.startDate, d.endDate, true);
     }
   }
   return out;

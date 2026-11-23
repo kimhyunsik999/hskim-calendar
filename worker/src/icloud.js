@@ -129,6 +129,61 @@ export function buildIcs(event, uid, now = new Date()) {
   return L.map(fold).join('\r\n') + '\r\n';
 }
 
+// --- find / edit existing events (by UID) ---
+
+/** Locate an event by UID across the writable calendars. Returns { href, etag, ics, cal } or null. */
+export async function findByUid(env, uid) {
+  const cals = await listCalendars(env);
+  const body = `<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+    <d:prop><d:getetag/><c:calendar-data/></d:prop>
+    <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">
+      <c:prop-filter name="UID"><c:text-match collation="i;octet">${uid.replace(/[<&>]/g, '')}</c:text-match></c:prop-filter>
+    </c:comp-filter></c:comp-filter></c:filter>
+  </c:calendar-query>`;
+  for (const cal of cals) {
+    const xml = await dav(env, cal.id, 'REPORT', body, 1);
+    for (const r of responses(xml)) {
+      const ics = unxml(first(r, 'calendar-data') ?? '');
+      if (!ics.includes('BEGIN:VEVENT')) continue;
+      return { href: abs(hrefIn(r), cal.id), etag: (first(r, 'getetag') ?? '').trim(), ics, cal };
+    }
+  }
+  return null;
+}
+
+const unfold = (ics) => ics.replace(/\r?\n[ \t]/g, '');
+const KST_TZ = ['BEGIN:VTIMEZONE', 'TZID:Asia/Seoul', 'BEGIN:STANDARD', 'DTSTART:19700101T000000', 'TZOFFSETFROM:+0900', 'TZOFFSETTO:+0900', 'TZNAME:KST', 'END:STANDARD', 'END:VTIMEZONE'];
+
+/** Replace SUMMARY/DTSTART/DTEND of the (single, non-recurring) VEVENT; everything else (alarms, notes, location…) is kept. */
+export function editIcs(ics, event, now = new Date()) {
+  const lines = unfold(ics).split(/\r?\n/).filter((l) => l !== '');
+  const starts = lines.reduce((a, l, i) => (l === 'BEGIN:VEVENT' ? [...a, i] : a), []);
+  if (starts.length !== 1) throw new HttpError(409, 'recurring', '반복 일정은 아이폰 캘린더에서 수정해주세요.');
+  const s = starts[0];
+  const e = lines.indexOf('END:VEVENT', s);
+  const body = lines.slice(s + 1, e);
+  if (body.some((l) => /^(RRULE|RDATE|RECURRENCE-ID)[:;]/.test(l))) throw new HttpError(409, 'recurring', '반복 일정은 아이폰 캘린더에서 수정해주세요.');
+  // Reuse buildIcs for the new time lines, then splice them in.
+  const fresh = unfold(buildIcs(event, 'x', now)).split(/\r?\n/);
+  const pick = (re) => fresh.filter((l) => re.test(l));
+  const keep = body.filter((l) => !/^(SUMMARY|DTSTART|DTEND|DURATION|DTSTAMP|LAST-MODIFIED|SEQUENCE|TRANSP)[:;]/.test(l));
+  const seq = Number(body.find((l) => l.startsWith('SEQUENCE:'))?.slice(9) ?? 0) + 1;
+  const newBody = [...keep, ...pick(/^(SUMMARY|DTSTART|DTEND|DTSTAMP|TRANSP)[:;]/), `LAST-MODIFIED:${stamp(now)}`, `SEQUENCE:${seq}`];
+  let out = [...lines.slice(0, s + 1), ...newBody, ...lines.slice(e)];
+  if (event.time && !out.some((l) => l === 'TZID:Asia/Seoul')) out.splice(out.indexOf('BEGIN:VEVENT'), 0, ...KST_TZ);
+  return out.map(fold).join('\r\n') + '\r\n';
+}
+
+async function putOrDelete(env, method, href, etag, body) {
+  const r = await fetch(href, {
+    method,
+    headers: { Authorization: basic(env), ...(etag ? { 'If-Match': etag } : {}), ...(body ? { 'Content-Type': 'text/calendar; charset=utf-8' } : {}) },
+    body,
+  });
+  if (r.status === 412) throw new HttpError(409, 'conflict', '다른 곳에서 방금 수정된 일정입니다. 새로고침 후 다시 시도해주세요.');
+  if (r.status >= 300 && r.status !== 404) throw new HttpError(502, 'icloud_error', `iCloud ${method} ${r.status}`);
+}
+
 const validEvent = (e) =>
   e &&
   typeof e.title === 'string' &&
@@ -162,6 +217,21 @@ export async function handleICloud(path, body, env) {
     if (r.status === 401) throw new HttpError(502, 'icloud_auth', 'iCloud 로그인 실패');
     if (r.status >= 300) throw new HttpError(502, 'icloud_error', `iCloud PUT ${r.status}`);
     return { ok: true, uid, calendar: cal.name };
+  }
+
+  if (path === '/icloud/update' || path === '/icloud/delete') {
+    const uid = body.uid;
+    if (typeof uid !== 'string' || !uid || uid.length > 300) throw new HttpError(400, 'bad_request', 'uid required');
+    const found = await findByUid(env, uid);
+    if (!found) throw new HttpError(404, 'not_found', 'iCloud에서 일정을 찾지 못했습니다. (이미 삭제되었을 수 있음)');
+    if (path === '/icloud/delete') {
+      if (/^(RRULE|RDATE)[:;]/m.test(unfold(found.ics))) throw new HttpError(409, 'recurring', '반복 일정은 아이폰 캘린더에서 삭제해주세요.');
+      await putOrDelete(env, 'DELETE', found.href, found.etag);
+      return { ok: true, calendar: found.cal.name };
+    }
+    if (!validEvent(body.event)) throw new HttpError(400, 'bad_request', 'invalid event');
+    await putOrDelete(env, 'PUT', found.href, found.etag, editIcs(found.ics, body.event));
+    return { ok: true, calendar: found.cal.name };
   }
 
   throw new HttpError(404, 'not_found', 'unknown route');

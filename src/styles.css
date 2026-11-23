@@ -167,3 +167,12 @@ main { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; }
 .add-row input[type='time'] { flex: 1; }
 .allday { display: flex; align-items: center; gap: 4px; font-size: 15px; white-space: nowrap; flex: none; }
 .allday input { width: auto; }
+
+.ev-list li.tappable { cursor: pointer; }
+.ev-list li.tappable:active { filter: brightness(0.95); }
+.ev-list .edit-mark { font-size: 13px; opacity: 0.55; padding: 0 6px; }
+.ev-list li.editing { display: block; background: var(--chip); padding: 0; }
+.ev-edit { display: grid; gap: 6px; padding: 10px; border-left: 3px solid var(--c); }
+.ev-edit input[type='date'] { flex: 1; }
+.btn.danger { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
+.btn.grow { flex: 1; }

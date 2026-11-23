@@ -1,21 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { DaySheet } from './components/DaySheet';
+import { DaySheet, type EditInput } from './components/DaySheet';
 import { MemoSheet } from './components/MemoSheet';
 import { MonthGrid } from './components/MonthGrid';
 import { SettingsSheet, SHARED_CAL_NAME } from './components/SettingsSheet';
 import { StatsSheet } from './components/StatsSheet';
-import { AuthError, allDay, createCalendar, deleteEvent, insertEvent, type CalEvent } from './google/api';
+import { AuthError, allDay, createCalendar, deleteEvent, insertEvent, patchEvent, type CalEvent, type GEvent } from './google/api';
 import { ensureShiftCalendars, saveMonthMemo, setOverride, shareAll, syncShifts, writeExternals } from './google/sync';
-import { addDays, monthGrid, parts, shiftMonth, today, WEEKDAYS, ymd, type DateStr } from './lib/date';
+import { addDays, diffDays, monthGrid, parts, shiftMonth, today, WEEKDAYS, ymd, type DateStr } from './lib/date';
 import { holidaysOf, type HolidayMap } from './lib/korean';
 import { baseShift, DEFAULT_COLORS, SHIFT_OPTIONS, SYNC_VERSION, textOn, type Shift, type ShiftColors } from './lib/shift';
 import { notifySpouse, refreshRegistration } from './lib/push';
 import type { ExtCal } from './lib/externalIcs';
-import { cachedICloudCals, createICloudEvent, listICloudCals, type ICloudCal } from './lib/icloud';
+import { cachedICloudCals, createICloudEvent, deleteICloudEvent, listICloudCals, updateICloudEvent, type ICloudCal } from './lib/icloud';
 import { shiftCalsFor, useCalendarData, useExternalEvents, useGoogle, useSettings, useWeather, weatherLocs } from './state';
 
 /** '2026-12-03' → '12/3' */
+/** iCloud (public link) events carry calendarId 'ext:…'. */
+const isICloud = (ev: CalEvent) => ev.calendarId.startsWith('ext:');
+
 const md = (d: DateStr) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 
 type Panel ={ kind: 'day'; date: DateStr } | { kind: 'settings' } | { kind: 'stats' } | { kind: 'memo' } | null;
@@ -360,9 +363,50 @@ export default function App() {
               );
             }, `${where}에 추가했습니다`).then((ok) => ok && tell(`${md(date)}${time ? ` ${time}` : ''} ${where} 일정 추가: ${title}`));
           }}
+          whyNotEditable={(ev: CalEvent) => {
+            if (!g.token) return 'Google 연결 후 수정할 수 있습니다.';
+            if (isICloud(ev)) {
+              if (!icloudCals.length) return 'iCloud 쓰기가 설정되지 않았습니다.';
+              if (ev.recurring) return '반복 일정은 아이폰 캘린더에서 수정해주세요.';
+              if (!ev.uid) return '이 일정은 수정할 수 없습니다.';
+              return null;
+            }
+            const role = data.calendars.find((c) => c.id === ev.calendarId)?.accessRole;
+            return role === 'owner' || role === 'writer' ? null : '읽기 전용 캘린더라 수정할 수 없습니다.';
+          }}
+          onUpdate={(ev: CalEvent, x: EditInput) => {
+            const span = ev.allDay ? diffDays(ev.end, ev.start) : 0; // keep multi-day all-day length
+            run(async (t) => {
+              if (isICloud(ev)) {
+                await updateICloudEvent(t, sharedId!, ev.uid!, { title: x.title, date: x.date, time: x.time, minutes: x.minutes, endDate: x.time ? undefined : addDays(x.date, span) });
+                setTimeout(() => ext.reload(true), 4000);
+                setTimeout(() => ext.reload(true), 30000);
+                return;
+              }
+              const startIso = `${x.date}T${x.time}:00+09:00`;
+              // null clears the other representation so Google accepts date ↔ dateTime switches.
+              await patchEvent(t, ev.calendarId, ev.id, {
+                summary: x.title,
+                ...(x.time
+                  ? {
+                      start: { dateTime: startIso, date: null },
+                      end: { dateTime: new Date(Date.parse(startIso) + (x.minutes ?? 60) * 60_000).toISOString(), date: null },
+                    }
+                  : { start: { date: x.date, dateTime: null }, end: { date: addDays(x.date, span + 1), dateTime: null } }),
+              } as unknown as Partial<GEvent>);
+            }, '수정했습니다').then((ok) => ok && tell(`${md(x.date)} 일정 수정: ${x.title}`));
+          }}
           onDelete={(ev: CalEvent) => {
-            if (confirm(`"${ev.title}" 일정을 삭제할까요?`))
-              run((t) => deleteEvent(t, ev.calendarId, ev.id)).then((ok) => ok && tell(`${md(ev.start)} 일정 삭제: ${ev.title}`));
+            if (!confirm(`"${ev.title}" 일정을 삭제할까요?`)) return;
+            run(async (t) => {
+              if (isICloud(ev)) {
+                await deleteICloudEvent(t, sharedId!, ev.uid!);
+                setTimeout(() => ext.reload(true), 4000);
+                setTimeout(() => ext.reload(true), 30000);
+                return;
+              }
+              await deleteEvent(t, ev.calendarId, ev.id);
+            }, '삭제했습니다').then((ok) => ok && tell(`${md(ev.start)} 일정 삭제: ${ev.title}`));
           }}
         />
       )}

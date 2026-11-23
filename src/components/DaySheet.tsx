@@ -24,10 +24,68 @@ type Props = {
   onAddMemo: (date: DateStr, ev: NewEventInput) => void;
   icloudCals: ICloudCal[];
   onDelete: (ev: CalEvent) => void;
+  onUpdate: (ev: CalEvent, x: EditInput) => void;
+  /** null = editable; otherwise why not (shown when tapped). */
+  whyNotEditable: (ev: CalEvent) => string | null;
   homeWx: Forecast | null;
   workWx: Forecast | null;
   places: { home?: string; work?: string };
 };
+
+/** Result of editing an existing event. No time = all-day. */
+export type EditInput = { title: string; date: DateStr; time?: string; minutes?: number };
+
+function EventEditor({ ev, busy, onSave, onDelete, onCancel }: { ev: CalEvent; busy: boolean; onSave: (x: EditInput) => void; onDelete: () => void; onCancel: () => void }) {
+  const [title, setTitle] = useState(ev.title);
+  const [date, setDate] = useState(ev.start);
+  const [allDay, setAllDay] = useState(ev.allDay);
+  const [time, setTime] = useState(ev.time ?? '09:00');
+  const [minutes, setMinutes] = useState(ev.minutes && ev.minutes > 0 ? ev.minutes : 60);
+  const durations = [...new Set([30, 60, 90, 120, 180, 240, minutes])].sort((a, b) => a - b);
+  return (
+    <form
+      className="ev-edit"
+      style={{ ['--c' as string]: ev.color }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (title.trim()) onSave({ title: title.trim(), date, time: allDay ? undefined : time, minutes: allDay ? undefined : minutes });
+      }}
+    >
+      <div className="muted small">{ev.calendarName} 일정 수정</div>
+      <input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="제목" />
+      <div className="add-row">
+        <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="날짜" />
+        <label className="allday">
+          <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
+          종일
+        </label>
+      </div>
+      {!allDay && (
+        <div className="add-row">
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value || '09:00')} aria-label="시작 시간" />
+          <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} aria-label="소요 시간">
+            {durations.map((n) => (
+              <option key={n} value={n}>
+                {n < 60 ? `${n}분` : n % 60 ? `${Math.floor(n / 60)}시간 ${n % 60}분` : `${n / 60}시간`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <div className="add-row">
+        <button type="button" className="btn ghost" onClick={onCancel}>
+          취소
+        </button>
+        <button type="button" className="btn danger" disabled={busy} onClick={onDelete}>
+          삭제
+        </button>
+        <button className="btn grow" disabled={busy || !title.trim()}>
+          저장
+        </button>
+      </div>
+    </form>
+  );
+}
 
 function WxLine({ label, h }: { label: string; h: Hour }) {
   return (
@@ -48,6 +106,8 @@ export function DaySheet(p: Props) {
     .filter((e) => e.start <= date && e.end >= date)
     .sort((a, b) => Number(b.allDay) - Number(a.allDay) || (a.time ?? '').localeCompare(b.time ?? ''));
   const wx = shiftWeather(p.homeWx, p.workWx, date, shift, addDays(date, 1));
+  const [editing, setEditing] = useState<string | null>(null);
+  const [hint, setHint] = useState<{ key: string; text: string } | null>(null);
   const [title, setTitle] = useState('');
   const [allDay, setAllDay] = useState(true);
   const [time, setTime] = useState('09:00');
@@ -128,22 +188,47 @@ export function DaySheet(p: Props) {
         <h3>일정</h3>
         {dayEvents.length === 0 && <p className="muted">일정이 없습니다.</p>}
         <ul className="ev-list">
-          {dayEvents.map((e) => (
-            <li key={e.calendarId + e.id} style={{ ['--c' as string]: e.color }}>
-              <i className="bar" />
-              <div>
-                <div>{e.title}</div>
-                <div className="muted">
-                  {e.allDay ? (e.start === e.end ? '종일' : `${e.start.slice(5)} ~ ${e.end.slice(5)}`) : e.time} · {e.calendarName}
+          {dayEvents.map((e) => {
+            const key = e.calendarId + e.id;
+            if (editing === key)
+              return (
+                <li key={key} className="editing">
+                  <EventEditor
+                    ev={e}
+                    busy={p.busy}
+                    onCancel={() => setEditing(null)}
+                    onDelete={() => {
+                      setEditing(null);
+                      p.onDelete(e);
+                    }}
+                    onSave={(x) => {
+                      setEditing(null);
+                      p.onUpdate(e, x);
+                    }}
+                  />
+                </li>
+              );
+            const why = p.whyNotEditable(e);
+            return (
+              <li
+                key={key}
+                style={{ ['--c' as string]: e.color }}
+                className={why ? '' : 'tappable'}
+                onClick={() => (why ? setHint({ key, text: why }) : (setEditing(key), setHint(null)))}
+              >
+                <i className="bar" />
+                <div>
+                  <div>{e.title}</div>
+                  <div className="muted">
+                    {e.allDay ? (e.start === e.end ? '종일' : `${e.start.slice(5)} ~ ${e.end.slice(5)}`) : e.time} · {e.calendarName}
+                    {e.recurring && ' · 🔁'}
+                  </div>
+                  {hint?.key === key && <div className="muted small">{hint.text}</div>}
                 </div>
-              </div>
-              {e.calendarId === p.sharedCalId && (
-                <button className="icon-btn" disabled={p.busy} onClick={() => p.onDelete(e)} aria-label="삭제">
-                  🗑
-                </button>
-              )}
-            </li>
-          ))}
+                {!why && <span className="edit-mark" aria-hidden="true">✏️</span>}
+              </li>
+            );
+          })}
         </ul>
         <form
           className="add-ev"
