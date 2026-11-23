@@ -21,10 +21,11 @@ C(야간)는 해당 날짜 23:00 시작 → 다음날 07:00 종료로 처리.
 | 데이터 | 저장 위치 |
 |---|---|
 | 기본 근무 패턴 | 코드 (`src/lib/shift.ts`) |
-| 근무 변경 | 공유 캘린더 종일 일정 `[근무변경] X` (`extendedProperties.shared.kind=override`) |
-| 근무 일정(알람) | 공유 캘린더 시간 일정 (`kind=shift`) |
-| 메모 | 공유 캘린더 일반 일정 / 월별 메모는 `kind=monthMemo` |
-| 기기 설정 | 브라우저 localStorage |
+| 근무 변경 | 메인 공유 캘린더 `4조 근무표`의 종일 일정 `[근무변경] X` (`extendedProperties.shared.kind=override`) |
+| 근무 일정(알람) | 근무별 캘린더 4개 `4조 A 주간` / `4조 B 오후` / `4조 C 야간` / `4조 휴무` (`kind=shift`). 아이폰 캘린더는 캘린더 단위로만 색을 표시하므로 근무별로 분리. 휴무·연차는 종일 일정 |
+| 근무 캘린더 ID 매핑 | 메인 공유 캘린더 설명(description)의 `[hskim-calendar] {...}` 줄 — 배우자도 같은 캘린더를 찾음 |
+| 메모 | 메인 공유 캘린더 일반 일정 / 월별 메모는 `kind=monthMemo` |
+| 기기 설정 (뱃지 색 등) | 브라우저 localStorage |
 
 저장소는 Public이므로 **개인 데이터는 저장소에 넣지 않습니다** — 모두 Google 계정 안에만 있습니다.
 
