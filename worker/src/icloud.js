@@ -189,13 +189,14 @@ export function editIcs(ics, event, now = new Date()) {
   return out.map(fold).join('\r\n') + '\r\n';
 }
 
-async function putOrDelete(env, method, href, etag, body) {
+// No If-Match: iCloud answers a *matching* If-Match with 304 (GET) / 412 (PUT), i.e. it can't be used for
+// optimistic locking. Last write wins — fine for a two-person family calendar.
+async function putOrDelete(env, method, href, body) {
   const r = await fetch(href, {
     method,
-    headers: { Authorization: basic(env), ...(etag ? { 'If-Match': etag } : {}), ...(body ? { 'Content-Type': 'text/calendar; charset=utf-8' } : {}) },
+    headers: { Authorization: basic(env), ...(body ? { 'Content-Type': 'text/calendar; charset=utf-8' } : {}) },
     body,
   });
-  if (r.status === 412) throw new HttpError(409, 'conflict', '다른 곳에서 방금 수정된 일정입니다. 새로고침 후 다시 시도해주세요.');
   if (r.status >= 300 && r.status !== 404) throw new HttpError(502, 'icloud_error', `iCloud ${method} ${r.status}`);
 }
 
@@ -241,11 +242,11 @@ export async function handleICloud(path, body, env) {
     if (!found) throw new HttpError(404, 'not_found', 'iCloud에서 일정을 찾지 못했습니다. (이미 삭제되었을 수 있음)');
     if (path === '/icloud/delete') {
       if (/^(RRULE|RDATE)[:;]/m.test(unfold(found.ics))) throw new HttpError(409, 'recurring', '반복 일정은 아이폰 캘린더에서 삭제해주세요.');
-      await putOrDelete(env, 'DELETE', found.href, found.etag);
+      await putOrDelete(env, 'DELETE', found.href);
       return { ok: true, calendar: found.cal.name };
     }
     if (!validEvent(body.event)) throw new HttpError(400, 'bad_request', 'invalid event');
-    await putOrDelete(env, 'PUT', found.href, found.etag, editIcs(found.ics, body.event));
+    await putOrDelete(env, 'PUT', found.href, editIcs(found.ics, body.event));
     return { ok: true, calendar: found.cal.name };
   }
 

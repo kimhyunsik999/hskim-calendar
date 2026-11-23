@@ -105,7 +105,7 @@ describe('iCloud CalDAV', () => {
     expect(() => editIcs(rec, { title: 'x', date: '2026-11-02' })).toThrow(/반복 일정/);
   });
 
-  it('finds by "<uid>.ics" first, else by time-range + UID (iCloud rejects UID filters), and writes with the ETag', async () => {
+  it('finds by "<uid>.ics" first, else by time-range + UID (iCloud rejects UID filters), and writes without If-Match (iCloud mishandles it)', async () => {
     const puts = fakeICloud();
     const calls: { m: string; url: string; h: Record<string, string>; body?: string }[] = [];
     const prev = globalThis.fetch;
@@ -140,7 +140,7 @@ describe('iCloud CalDAV', () => {
     expect(r).toMatchObject({ ok: true, calendar: '가족❣️' });
     const put = calls.find((c) => c.m === 'PUT')!;
     expect(put.url).toBe('https://p44-caldav.icloud.com/1234567/calendars/FAMILY-2/OURS%40hskim-calendar.ics');
-    expect(put.h['If-Match']).toBe('"etag-ours"');
+    expect(put.h['If-Match']).toBeUndefined(); // iCloud mishandles If-Match
     expect(calls.some((c) => c.m === 'REPORT')).toBe(false);
 
     // 2) Apple-made event with a different resource name: time-range REPORT around the date
@@ -149,7 +149,7 @@ describe('iCloud CalDAV', () => {
     expect(rep.body).toContain('time-range start="20261121T150000Z" end="20261124T150000Z"'); // 11/22 00:00 ~ 11/25 00:00 KST
     const del = calls.find((c) => c.m === 'DELETE')!;
     expect(del.url).toBe('https://p44-caldav.icloud.com/1234567/calendars/FAMILY-1/0F3A-random-name.ics');
-    expect(del.h['If-Match']).toBe('"etag-apple"');
+    expect(del.h['If-Match']).toBeUndefined();
 
     // 3) not found without a date → 404
     await expect(handleICloud('/icloud/delete', { token: 't', calId: 'shared', uid: 'NOPE' }, env)).rejects.toMatchObject({ status: 404 });
