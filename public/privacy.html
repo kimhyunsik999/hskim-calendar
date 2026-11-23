@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>개인정보처리방침 · 4조 근무표</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fff; --muted: #6e6e73; --line: #e5e5ea; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #f2f2f7; --bg: #000; --muted: #98989d; --line: #2c2c2e; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.7 -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 28px 0 8px; border-top: 1px solid var(--line); padding-top: 20px; }
+  p, li { margin: 6px 0; } .muted { color: var(--muted); font-size: 14px; } a { color: #1a73e8; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; } td, th { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+</style>
+</head>
+<body>
+<main>
+  <h1>개인정보처리방침</h1>
+  <p class="muted">4조 근무표 (https://kimhyunsik999.github.io/hskim-calendar/) · 시행일 2026년 11월 23일</p>
+
+  <p>4조 근무표(이하 "앱")는 교대 근무 일정을 확인하고 가족과 공유하기 위한 개인용 웹앱입니다. 앱은 별도의 회원 데이터베이스를 운영하지 않으며, 사용자의 일정 데이터는 사용자 본인의 Google 계정(Google Calendar)에 저장됩니다.</p>
+
+  <h2>1. 처리하는 정보와 목적</h2>
+  <table>
+    <tr><th>정보</th><th>목적</th><th>저장 위치 · 기간</th></tr>
+    <tr><td>Google Calendar 일정·캘린더 목록 (Google 계정 연결 시)</td><td>달력 표시, 근무 일정·근무 변경·메모의 생성·수정·삭제, 근무 알림 설정</td><td>사용자의 Google Calendar. 앱 서버에 저장하지 않음</td></tr>
+    <tr><td>Google 로그인 토큰</td><td>로그인 유지</td><td>사용자 기기(브라우저 저장소)에 암호화된 형태로 저장. 연결 해제 시 삭제·폐기</td></tr>
+    <tr><td>Google 계정 이메일, 기기 푸시 구독 정보, 사용자가 입력한 이름</td><td>배우자 변경 알림 발송 대상 확인</td><td>Cloudflare(앱 중계 서버) 저장소. 알림 끄기 시 삭제, 미사용 시 180일 후 자동 삭제</td></tr>
+    <tr><td>iCloud 공개 캘린더 링크 (사용자가 입력한 경우)</td><td>해당 캘린더 일정 표시</td><td>사용자 기기에만 저장. 중계 서버는 전달만 하고 저장하지 않음(최대 5분 캐시)</td></tr>
+    <tr><td>날씨 위치 (선택한 지역 또는 약 1km 단위로 반올림한 현재 위치)</td><td>출퇴근 날씨 표시</td><td>사용자 기기에만 저장. 예보 조회를 위해 Open-Meteo에 좌표 전달</td></tr>
+  </table>
+
+  <h2>2. Google 사용자 데이터</h2>
+  <p>앱은 Google Calendar API 권한(<code>https://www.googleapis.com/auth/calendar</code>)을 위 목적에만 사용합니다. Google 사용자 데이터를 판매하거나 광고에 사용하지 않으며, 위 목적 외의 제3자에게 제공하지 않습니다. 앱의 Google 사용자 데이터 사용은 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API 서비스 사용자 데이터 정책</a>(제한적 사용 요건 포함)을 따릅니다.</p>
+
+  <h2>3. 처리 위탁 및 외부 서비스</h2>
+  <ul>
+    <li>GitHub Pages — 앱 화면(정적 파일) 제공</li>
+    <li>Cloudflare Workers — 로그인 토큰 교환·갱신, iCloud 캘린더 중계, 푸시 알림 발송</li>
+    <li>Apple/Google 푸시 서비스 — 알림 전달</li>
+    <li>Open-Meteo — 날씨 예보 조회</li>
+  </ul>
+
+  <h2>4. 이용자의 권리</h2>
+  <ul>
+    <li>앱 설정에서 언제든 Google 연결 해제, 알림 끄기, iCloud 캘린더 삭제를 할 수 있습니다.</li>
+    <li><a href="https://myaccount.google.com/permissions">Google 계정 › 서드파티 액세스</a>에서 앱 권한을 철회할 수 있습니다.</li>
+    <li>앱이 만든 캘린더와 일정은 Google Calendar에서 직접 삭제할 수 있습니다.</li>
+  </ul>
+
+  <h2>5. 문의</h2>
+  <p><a href="https://github.com/kimhyunsik999/hskim-calendar/issues">GitHub 저장소 이슈</a>로 문의해 주세요.</p>
+
+  <p class="muted"><a href="./">앱으로 돌아가기</a> · <a href="terms.html">서비스 약관</a></p>
+</main>
+</body>
+</html>

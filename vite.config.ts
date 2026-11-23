@@ -46,7 +46,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,png,svg}'],
         importScripts: ['push-sw.js'],
         // Never cache Google API / auth calls.
-        navigateFallbackDenylist: [/^\/shifts\.ics/],
+        // Real files that must not be swallowed by the SPA fallback (base path may prefix them).
+        navigateFallbackDenylist: [/shifts\.ics$/, /privacy\.html$/, /terms\.html$/],
       },
     }),
   ],
