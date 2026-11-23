@@ -160,3 +160,10 @@ main { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; }
 /* month swipe strip: [prev | current | next] */
 .strip { display: flex; width: 300%; height: 100%; transform: translate3d(calc(-100% / 3), 0, 0); will-change: transform; }
 .strip > .panel { width: calc(100% / 3); height: 100%; flex: none; }
+
+.add-ev { display: grid; gap: 6px; margin-top: 6px; }
+.add-row { display: flex; gap: 6px; align-items: center; }
+.add-row select { flex: 1; min-width: 0; }
+.add-row input[type='time'] { flex: 1; }
+.allday { display: flex; align-items: center; gap: 4px; font-size: 15px; white-space: nowrap; flex: none; }
+.allday input { width: auto; }

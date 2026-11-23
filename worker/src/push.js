@@ -34,7 +34,7 @@ export class PushError extends Error {
 
 // ---------- membership check via Google ----------
 
-async function whoCanSee(token, calId) {
+export async function whoCanSee(token, calId) {
   const h = { Authorization: `Bearer ${token}` };
   const [cal, primary] = await Promise.all([
     fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}`, { headers: h }),

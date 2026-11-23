@@ -4,8 +4,12 @@ import { addDays, parts, WEEKDAYS, weekday, type DateStr } from '../lib/date';
 import { describe, icon, isAlert, leaveTime, shiftWeather, type Forecast, type Hour } from '../lib/weather';
 import { lunarOf, type HolidayMap } from '../lib/korean';
 import { baseShift, effectiveShift, isWork, SHIFT_OPTIONS, SHIFT_TIMES, type Overrides, type Shift } from '../lib/shift';
+import type { ICloudCal } from '../lib/icloud';
 import { Sheet } from './Sheet';
 import { ShiftBadge } from './ShiftBadge';
+
+/** target: 'google' (shared 4조 calendar) or 'icloud:<calendar url>'. No time = all-day. */
+export type NewEventInput = { title: string; target: string; time?: string; minutes?: number };
 
 type Props = {
   date: DateStr;
@@ -17,7 +21,8 @@ type Props = {
   busy: boolean;
   onClose: () => void;
   onOverride: (date: DateStr, s: Shift | null) => void;
-  onAddMemo: (date: DateStr, title: string, time: string) => void;
+  onAddMemo: (date: DateStr, ev: NewEventInput) => void;
+  icloudCals: ICloudCal[];
   onDelete: (ev: CalEvent) => void;
   homeWx: Forecast | null;
   workWx: Forecast | null;
@@ -44,7 +49,21 @@ export function DaySheet(p: Props) {
     .sort((a, b) => Number(b.allDay) - Number(a.allDay) || (a.time ?? '').localeCompare(b.time ?? ''));
   const wx = shiftWeather(p.homeWx, p.workWx, date, shift, addDays(date, 1));
   const [title, setTitle] = useState('');
-  const [time, setTime] = useState('');
+  const [allDay, setAllDay] = useState(true);
+  const [time, setTime] = useState('09:00');
+  const [minutes, setMinutes] = useState(60);
+  const [target, setTarget] = useState(() => {
+    const last = localStorage.getItem('hc.lastTarget') ?? 'google';
+    return last === 'google' || p.icloudCals.some((c) => `icloud:${c.id}` === last) ? last : 'google';
+  });
+  const pickTarget = (v: string) => {
+    setTarget(v);
+    try {
+      localStorage.setItem('hc.lastTarget', v);
+    } catch {
+      /* ignore */
+    }
+  };
 
   return (
     <Sheet
@@ -127,18 +146,42 @@ export function DaySheet(p: Props) {
           ))}
         </ul>
         <form
-          className="add-memo"
+          className="add-ev"
           onSubmit={(e) => {
             e.preventDefault();
             if (!title.trim()) return;
-            p.onAddMemo(date, title.trim(), time);
+            p.onAddMemo(date, { title: title.trim(), target, time: allDay ? undefined : time, minutes: allDay ? undefined : minutes });
             setTitle('');
-            setTime('');
           }}
         >
-          <input placeholder="메모·일정 추가" value={title} onChange={(e) => setTitle(e.target.value)} disabled={!p.canEdit} />
-          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} disabled={!p.canEdit} aria-label="시간 (비우면 종일)" />
-          <button className="btn" disabled={!p.canEdit || p.busy || !title.trim()}>
+          <input placeholder="일정 추가" value={title} onChange={(e) => setTitle(e.target.value)} disabled={!p.canEdit} />
+          <div className="add-row">
+            <select value={target} onChange={(e) => pickTarget(e.target.value)} disabled={!p.canEdit} aria-label="저장할 캘린더">
+              <option value="google">📅 4조 근무표 (공유)</option>
+              {p.icloudCals.map((c) => (
+                <option key={c.id} value={`icloud:${c.id}`}>
+                  ☁️ {c.name}
+                </option>
+              ))}
+            </select>
+            <label className="allday">
+              <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} disabled={!p.canEdit} />
+              종일
+            </label>
+          </div>
+          {!allDay && (
+            <div className="add-row">
+              <input type="time" value={time} onChange={(e) => setTime(e.target.value || '09:00')} disabled={!p.canEdit} aria-label="시작 시간" />
+              <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} disabled={!p.canEdit} aria-label="소요 시간">
+                {[30, 60, 90, 120, 180, 240].map((n) => (
+                  <option key={n} value={n}>
+                    {n < 60 ? `${n}분` : `${n / 60}시간`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <button className="btn wide" disabled={!p.canEdit || p.busy || !title.trim()}>
             추가
           </button>
         </form>

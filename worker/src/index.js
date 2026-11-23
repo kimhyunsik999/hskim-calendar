@@ -4,11 +4,13 @@
 //  POST /auth/refresh     encrypted rt → fresh access token.
 //  POST /auth/revoke      revoke the refresh token.
 //  POST /push/*           spouse push notifications (see push.js).
+//  POST /icloud/*         write events to the couple's iCloud calendars via CalDAV (see icloud.js).
 // Deliberately NOT an open proxy: only the app's origins, only calendar hosts.
 // Refresh tokens are never stored here: they're AES-GCM encrypted with TOKEN_KEY and kept by the client.
 //
 // Secrets (wrangler secret put): GOOGLE_CLIENT_SECRET, TOKEN_KEY (base64, 32 bytes). Var: GOOGLE_CLIENT_ID.
 
+import { handleICloud } from './icloud.js';
 import { handlePush } from './push.js';
 
 const ALLOWED_ORIGINS = ['https://kimhyunsik999.github.io', 'http://localhost:5173', 'http://localhost:4173'];
@@ -32,6 +34,14 @@ export default {
     if (!ALLOWED_ORIGINS.includes(origin)) return reply('forbidden', 403);
 
     const path = new URL(request.url).pathname;
+    if (path.startsWith('/icloud/')) {
+      if (request.method !== 'POST') return reply('method not allowed', 405);
+      try {
+        return json(await handleICloud(path, await request.json(), env));
+      } catch (e) {
+        return json({ error: e.code ?? 'error', message: String(e.message ?? e) }, e.status ?? 500);
+      }
+    }
     if (path.startsWith('/push/')) {
       if (request.method !== 'POST') return reply('method not allowed', 405);
       try {
@@ -79,7 +89,8 @@ async function proxyIcs(request, reply) {
   const upstream = await fetch(target.toString(), {
     headers: { Accept: 'text/calendar, */*' },
     redirect: 'follow',
-    cf: { cacheTtl: 300, cacheEverything: true },
+    // fresh=1 (right after the app wrote to iCloud) skips our 5-minute edge cache.
+    cf: new URL(request.url).searchParams.get('fresh') ? { cacheTtl: 0 } : { cacheTtl: 300, cacheEverything: true },
   });
   // iCloud may redirect between pNN-caldav hosts; make sure we still ended up somewhere allowed.
   if (!ALLOWED_HOSTS.some((h) => h.test(new URL(upstream.url).hostname))) return reply('redirect not allowed', 502);

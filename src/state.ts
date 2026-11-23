@@ -100,7 +100,12 @@ export function useExternalEvents(externals: ExtCal[] | undefined, from: DateStr
   const [events, setEvents] = useState<CalEvent[]>(() => load(key, []));
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  const fresh = useRef(false);
+  /** fresh: bypass the proxy cache (right after writing to iCloud). */
+  const reload = useCallback((bypass = false) => {
+    fresh.current = bypass;
+    setNonce((n) => n + 1);
+  }, []);
   const list = useMemo(() => externals ?? [], [externals]);
 
   useEffect(() => {
@@ -110,7 +115,9 @@ export function useExternalEvents(externals: ExtCal[] | undefined, from: DateStr
       return;
     }
     let alive = true;
-    Promise.allSettled(list.map((c) => fetchExternal(c, from, to))).then((rs) => {
+    const bypass = fresh.current;
+    fresh.current = false;
+    Promise.allSettled(list.map((c) => fetchExternal(c, from, to, bypass))).then((rs) => {
       if (!alive) return;
       const ok = rs.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
       const failed = rs.flatMap((r) => (r.status === 'rejected' ? [(r.reason as Error).message] : []));

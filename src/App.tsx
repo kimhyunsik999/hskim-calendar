@@ -12,6 +12,7 @@ import { holidaysOf, type HolidayMap } from './lib/korean';
 import { baseShift, DEFAULT_COLORS, SHIFT_OPTIONS, SYNC_VERSION, textOn, type Shift, type ShiftColors } from './lib/shift';
 import { notifySpouse, refreshRegistration } from './lib/push';
 import type { ExtCal } from './lib/externalIcs';
+import { cachedICloudCals, createICloudEvent, listICloudCals, type ICloudCal } from './lib/icloud';
 import { shiftCalsFor, useCalendarData, useExternalEvents, useGoogle, useSettings, useWeather, weatherLocs } from './state';
 
 /** '2026-12-03' → '12/3' */
@@ -110,6 +111,13 @@ export default function App() {
   useEffect(() => {
     if (g.token && settings.sharedCalId && settings.myName) refreshRegistration(g.token, settings.sharedCalId, settings.myName).catch(() => undefined);
   }, [g.token, settings.sharedCalId, settings.myName]);
+
+  // Writable iCloud calendars (for "일정 추가 › 저장할 캘린더"). Empty until iCloud writing is set up on the server.
+  const [icloudCals, setICloudCals] = useState<ICloudCal[]>(cachedICloudCals);
+  useEffect(() => {
+    if (!g.token || !settings.sharedCalId) return;
+    listICloudCals(g.token, settings.sharedCalId).then(setICloudCals, () => undefined);
+  }, [g.token, settings.sharedCalId]);
 
   // One-time move of this device's iCloud list into the shared calendar (owner only), so the spouse gets it.
   const migratedExt = useRef(false);
@@ -331,21 +339,27 @@ export default function App() {
               (ok) => ok && tell(`${md(date)} 근무를 ${s ?? `기본(${baseShift(date)})`}(으)로 변경했어요`),
             )
           }
-          onAddMemo={(date, title, time) =>
-            run((t) =>
-              insertEvent(
+          icloudCals={icloudCals}
+          onAddMemo={(date, { title, target, time, minutes = 60 }) => {
+            const where = target.startsWith('icloud:') ? icloudCals.find((c) => `icloud:${c.id}` === target)?.name ?? 'iCloud' : '4조 근무표';
+            run(async (t) => {
+              if (target.startsWith('icloud:')) {
+                await createICloudEvent(t, sharedId!, target.slice('icloud:'.length), { title, date, time, minutes: time ? minutes : undefined });
+                // iCloud's public feed takes a moment; re-read it bypassing our cache, twice.
+                setTimeout(() => ext.reload(true), 4000);
+                setTimeout(() => ext.reload(true), 30000);
+                return;
+              }
+              const startIso = `${date}T${time}:00+09:00`;
+              await insertEvent(
                 t,
                 sharedId!,
                 time
-                  ? {
-                      summary: title,
-                      start: { dateTime: `${date}T${time}:00+09:00` },
-                      end: { dateTime: new Date(Date.parse(`${date}T${time}:00+09:00`) + 3_600_000).toISOString() },
-                    }
+                  ? { summary: title, start: { dateTime: startIso }, end: { dateTime: new Date(Date.parse(startIso) + minutes * 60_000).toISOString() } }
                   : { summary: title, ...allDay(date) },
-              ),
-            ).then((ok) => ok && tell(`${md(date)}${time ? ` ${time}` : ''} 일정 추가: ${title}`))
-          }
+              );
+            }, `${where}에 추가했습니다`).then((ok) => ok && tell(`${md(date)}${time ? ` ${time}` : ''} ${where} 일정 추가: ${title}`));
+          }}
           onDelete={(ev: CalEvent) => {
             if (confirm(`"${ev.title}" 일정을 삭제할까요?`))
               run((t) => deleteEvent(t, ev.calendarId, ev.id)).then((ok) => ok && tell(`${md(ev.start)} 일정 삭제: ${ev.title}`));

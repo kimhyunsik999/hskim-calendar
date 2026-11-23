@@ -78,9 +78,9 @@ export async function parseIcs(text: string, cal: ExtCal, from: DateStr, to: Dat
   return out;
 }
 
-export async function fetchExternal(cal: ExtCal, from: DateStr, to: DateStr): Promise<CalEvent[]> {
+export async function fetchExternal(cal: ExtCal, from: DateStr, to: DateStr, fresh = false): Promise<CalEvent[]> {
   if (!ICS_PROXY) throw new Error('iCloud 중계 서버 주소가 설정되지 않았습니다.');
-  const r = await fetch(`${ICS_PROXY}?url=${encodeURIComponent(normalizeIcsUrl(cal.url))}`);
+  const r = await fetch(`${ICS_PROXY}?url=${encodeURIComponent(normalizeIcsUrl(cal.url))}${fresh ? `&fresh=${Date.now()}` : ''}`, fresh ? { cache: 'no-store' } : undefined);
   if (!r.ok) throw new Error(`${cal.name}: 캘린더를 불러오지 못했습니다 (${r.status})`);
   return parseIcs(await r.text(), cal, from, to);
 }
