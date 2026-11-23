@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { DaySheet } from './components/DaySheet';
 import { MemoSheet } from './components/MemoSheet';
 import { MonthGrid } from './components/MonthGrid';
@@ -54,7 +55,8 @@ export default function App() {
   const [holidays, setHolidays] = useState<HolidayMap>({});
   useEffect(() => {
     let alive = true;
-    const years = [...new Set([parts(from)[0], parts(to)[0]])];
+    // Cover the neighbour months shown while swiping, too.
+    const years = [...new Set([parts(addDays(from, -42))[0], parts(from)[0], parts(to)[0], parts(addDays(to, 42))[0]])];
     Promise.all(years.map(holidaysOf)).then((maps) => alive && setHolidays(Object.assign({}, ...maps)));
     return () => {
       alive = false;
@@ -144,16 +146,69 @@ export default function App() {
   const go = (delta: number) => setYm((v) => shiftMonth(v.y, v.m, delta));
   const isCurrent = ym.y === parts(todayStr)[0] && ym.m === parts(todayStr)[1];
 
-  // Swipe left/right to change month.
-  const touch = useRef<{ x: number; y: number } | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY });
-  const onTouchEnd = (e: React.TouchEvent) => {
-    const s = touch.current;
-    touch.current = null;
+  // ---- Swipe: the month strip [prev | current | next] follows the finger, then glides to the neighbour. ----
+  const mainRef = useRef<HTMLElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; y: number; t: number; axis?: 'x' | 'y'; dx: number } | null>(null);
+  const animating = useRef(false);
+  const lastDragEnd = useRef(0);
+
+  /** Offset the strip by dx px from "showing current month", optionally animated. */
+  const setStrip = (dx: number, ms = 0, ease = 'cubic-bezier(.22,.8,.3,1)') => {
+    const s = stripRef.current;
     if (!s) return;
-    const dx = e.changedTouches[0].clientX - s.x;
-    const dy = e.changedTouches[0].clientY - s.y;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1);
+    s.style.transition = ms ? `transform ${ms}ms ${ease}` : 'none';
+    s.style.transform = `translate3d(calc(-100% / 3 + ${dx}px), 0, 0)`;
+  };
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (animating.current) return;
+    drag.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now(), dx: 0 };
+    setStrip(0);
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.touches[0].clientX - d.x;
+    const dy = e.touches[0].clientY - d.y;
+    if (!d.axis && Math.hypot(dx, dy) > 8) d.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    if (d.axis !== 'x') return;
+    d.dx = dx;
+    setStrip(dx);
+  };
+  const onTouchEnd = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || d.axis !== 'x') return;
+    lastDragEnd.current = Date.now();
+    const w = mainRef.current?.clientWidth ?? window.innerWidth;
+    const v = d.dx / Math.max(1, performance.now() - d.t); // px/ms
+    const commit = Math.abs(d.dx) > w * 0.22 || (Math.abs(v) > 0.35 && Math.abs(d.dx) > 24);
+    if (!commit) return setStrip(0, 220);
+    const dir = d.dx < 0 ? 1 : -1;
+    animating.current = true;
+    setStrip(-dir * w, Math.max(140, Math.min(320, ((w - Math.abs(d.dx)) / Math.max(Math.abs(v), 0.8)) | 0)));
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      // Render the new month synchronously, then re-centre without animation — the neighbour panel
+      // already showed that month, so the swap is invisible.
+      flushSync(() => go(dir));
+      setStrip(0);
+      animating.current = false;
+    };
+    stripRef.current?.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 400); // in case transitionend doesn't fire
+  };
+
+  const prevYm = shiftMonth(ym.y, ym.m, -1);
+  const nextYm = shiftMonth(ym.y, ym.m, 1);
+  const prevDays = useMemo(() => monthGrid(prevYm.y, prevYm.m), [prevYm.y, prevYm.m]);
+  const nextDays = useMemo(() => monthGrid(nextYm.y, nextYm.m), [nextYm.y, nextYm.m]);
+  const onPick = (date: DateStr) => {
+    if (Date.now() - lastDragEnd.current < 350) return; // the tap that ended a swipe
+    setPanel({ kind: 'day', date });
   };
 
   const sharedId = settings.sharedCalId;
@@ -198,17 +253,19 @@ export default function App() {
         ))}
       </div>
 
-      <main onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <MonthGrid
-          month={ym.m}
-          days={days}
-          todayStr={todayStr}
-          events={events}
-          overrides={data.overrides}
-          holidays={holidays}
-          forecast={homeWx}
-          onPick={(date) => setPanel({ kind: 'day', date })}
-        />
+      <main ref={mainRef} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
+        <div className="strip" ref={stripRef}>
+          {/* Neighbours show shifts/holidays/weather (events load once they become current). */}
+          <div className="panel" aria-hidden="true">
+            <MonthGrid month={prevYm.m} days={prevDays} todayStr={todayStr} events={[]} overrides={data.overrides} holidays={holidays} forecast={homeWx} onPick={onPick} />
+          </div>
+          <div className="panel">
+            <MonthGrid month={ym.m} days={days} todayStr={todayStr} events={events} overrides={data.overrides} holidays={holidays} forecast={homeWx} onPick={onPick} />
+          </div>
+          <div className="panel" aria-hidden="true">
+            <MonthGrid month={nextYm.m} days={nextDays} todayStr={todayStr} events={[]} overrides={data.overrides} holidays={holidays} forecast={homeWx} onPick={onPick} />
+          </div>
+        </div>
       </main>
 
       <button className="month-memo" onClick={() => setPanel({ kind: 'memo' })}>

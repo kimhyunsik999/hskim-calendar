@@ -156,3 +156,7 @@ main { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; }
 .help-btn { font-size: 15px; line-height: 1; color: var(--muted); padding: 2px 4px; border-radius: 50%; }
 .help-btn.on { color: var(--today-line); }
 .help { font-size: 13px; color: var(--muted); background: var(--chip); border-radius: 8px; padding: 8px 10px; line-height: 1.5; }
+
+/* month swipe strip: [prev | current | next] */
+.strip { display: flex; width: 300%; height: 100%; transform: translate3d(calc(-100% / 3), 0, 0); will-change: transform; }
+.strip > .panel { width: calc(100% / 3); height: 100%; flex: none; }
