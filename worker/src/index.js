@@ -3,10 +3,13 @@
 //  POST /auth/exchange    Google OAuth code → access token + encrypted refresh token ("rt").
 //  POST /auth/refresh     encrypted rt → fresh access token.
 //  POST /auth/revoke      revoke the refresh token.
+//  POST /push/*           spouse push notifications (see push.js).
 // Deliberately NOT an open proxy: only the app's origins, only calendar hosts.
 // Refresh tokens are never stored here: they're AES-GCM encrypted with TOKEN_KEY and kept by the client.
 //
 // Secrets (wrangler secret put): GOOGLE_CLIENT_SECRET, TOKEN_KEY (base64, 32 bytes). Var: GOOGLE_CLIENT_ID.
+
+import { handlePush } from './push.js';
 
 const ALLOWED_ORIGINS = ['https://kimhyunsik999.github.io', 'http://localhost:5173', 'http://localhost:4173'];
 const ALLOWED_HOSTS = [/^p\d+-caldav\.icloud\.com$/, /^calendar\.google\.com$/];
@@ -29,6 +32,14 @@ export default {
     if (!ALLOWED_ORIGINS.includes(origin)) return reply('forbidden', 403);
 
     const path = new URL(request.url).pathname;
+    if (path.startsWith('/push/')) {
+      if (request.method !== 'POST') return reply('method not allowed', 405);
+      try {
+        return json(await handlePush(path, await request.json(), env));
+      } catch (e) {
+        return json({ error: e.code ?? 'error', message: String(e.message ?? e) }, e.status ?? 500);
+      }
+    }
     if (path.startsWith('/auth/')) {
       if (request.method !== 'POST') return reply('method not allowed', 405);
       if (!env.GOOGLE_CLIENT_SECRET || !env.TOKEN_KEY || !env.GOOGLE_CLIENT_ID) return json({ error: 'not_configured' }, 501);

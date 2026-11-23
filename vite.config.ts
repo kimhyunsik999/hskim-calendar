@@ -44,6 +44,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg}'],
+        importScripts: ['push-sw.js'],
         // Never cache Google API / auth calls.
         navigateFallbackDenylist: [/^\/shifts\.ics/],
       },

@@ -8,10 +8,14 @@ import { AuthError, allDay, createCalendar, deleteEvent, insertEvent, type CalEv
 import { ensureShiftCalendars, saveMonthMemo, setOverride, shareAll, syncShifts } from './google/sync';
 import { addDays, monthGrid, parts, shiftMonth, today, WEEKDAYS, ymd, type DateStr } from './lib/date';
 import { holidaysOf, type HolidayMap } from './lib/korean';
-import { DEFAULT_COLORS, SHIFT_OPTIONS, SYNC_VERSION, textOn, type Shift, type ShiftColors } from './lib/shift';
+import { baseShift, DEFAULT_COLORS, SHIFT_OPTIONS, SYNC_VERSION, textOn, type Shift, type ShiftColors } from './lib/shift';
+import { notifySpouse, refreshRegistration } from './lib/push';
 import { shiftCalsFor, useCalendarData, useExternalEvents, useGoogle, useSettings, useWeather, weatherLocs } from './state';
 
-type Panel = { kind: 'day'; date: DateStr } | { kind: 'settings' } | { kind: 'stats' } | { kind: 'memo' } | null;
+/** '2026-12-03' → '12/3' */
+const md = (d: DateStr) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+
+type Panel ={ kind: 'day'; date: DateStr } | { kind: 'settings' } | { kind: 'stats' } | { kind: 'memo' } | null;
 
 function useToday() {
   const [t, setT] = useState(today);
@@ -82,6 +86,20 @@ export default function App() {
     },
     [g, data],
   );
+
+  /** Push "○○님이 …" to the spouse's devices. Best effort — never blocks or errors the edit. */
+  const tell = useCallback(
+    (what: string) => {
+      if (!g.token || !settings.sharedCalId) return;
+      notifySpouse(g.token, settings.sharedCalId, `${settings.myName || '배우자'}님이 ${what}`).catch(() => undefined);
+    },
+    [g.token, settings.sharedCalId, settings.myName],
+  );
+
+  // Keep this device's push registration current (endpoint rotation, 180-day KV expiry).
+  useEffect(() => {
+    if (g.token && settings.sharedCalId && settings.myName) refreshRegistration(g.token, settings.sharedCalId, settings.myName).catch(() => undefined);
+  }, [g.token, settings.sharedCalId, settings.myName]);
 
   const colors = useMemo<ShiftColors>(() => ({ ...DEFAULT_COLORS, ...settings.colors }), [settings.colors]);
 
@@ -224,7 +242,9 @@ export default function App() {
           busy={busy}
           onClose={() => setPanel(null)}
           onOverride={(date: DateStr, s: Shift | null) =>
-            run(async (t) => setOverride(t, sharedId!, await getShiftCals(t), date, s, settings.reminderMin), s ? `${s}(으)로 변경했습니다` : '기본 근무로 되돌렸습니다')
+            run(async (t) => setOverride(t, sharedId!, await getShiftCals(t), date, s, settings.reminderMin), s ? `${s}(으)로 변경했습니다` : '기본 근무로 되돌렸습니다').then(
+              (ok) => ok && tell(`${md(date)} 근무를 ${s ?? `기본(${baseShift(date)})`}(으)로 변경했어요`),
+            )
           }
           onAddMemo={(date, title, time) =>
             run((t) =>
@@ -239,10 +259,11 @@ export default function App() {
                     }
                   : { summary: title, ...allDay(date) },
               ),
-            )
+            ).then((ok) => ok && tell(`${md(date)}${time ? ` ${time}` : ''} 일정 추가: ${title}`))
           }
           onDelete={(ev: CalEvent) => {
-            if (confirm(`"${ev.title}" 일정을 삭제할까요?`)) run((t) => deleteEvent(t, ev.calendarId, ev.id));
+            if (confirm(`"${ev.title}" 일정을 삭제할까요?`))
+              run((t) => deleteEvent(t, ev.calendarId, ev.id)).then((ok) => ok && tell(`${md(ev.start)} 일정 삭제: ${ev.title}`));
           }}
         />
       )}
@@ -257,7 +278,12 @@ export default function App() {
           canEdit={canEdit}
           busy={busy}
           onClose={() => setPanel(null)}
-          onSave={(text) => run((t) => saveMonthMemo(t, sharedId!, ymd(ym.y, ym.m, 1), text, monthMemo?.id), '저장했습니다').then(() => setPanel(null))}
+          onSave={(text) =>
+            run((t) => saveMonthMemo(t, sharedId!, ymd(ym.y, ym.m, 1), text, monthMemo?.id), '저장했습니다').then((ok) => {
+              setPanel(null);
+              if (ok) tell(`${ym.m}월 메모를 수정했어요`);
+            })
+          }
         />
       )}
       {panel?.kind === 'settings' && (
@@ -265,6 +291,7 @@ export default function App() {
           settings={settings}
           update={update}
           colors={colors}
+          token={g.token}
           calendars={data.calendars}
           connected={!!g.token}
           ready={g.ready}

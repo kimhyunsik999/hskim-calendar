@@ -41,6 +41,8 @@ export type Settings = {
   colors?: Partial<ShiftColors>;
   /** iCloud etc. calendars added by public ICS link (this device). */
   externals?: ExtCal[];
+  /** Name shown in the spouse's push notification ("○○님이 …"). */
+  myName?: string;
   /** Weather: 집 (출근 출발) and 회사 (퇴근). Each a preset id, 'gps' (saved coords) or 'off'. */
   weather?: { home?: LocSetting; work?: LocSetting; /** legacy single location = work */ id?: string; lat?: number; lon?: number };
 };

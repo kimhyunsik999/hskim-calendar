@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GCalendar } from '../google/api';
 import { CLIENT_ID } from '../google/gis';
 import { ICS_PROXY } from '../lib/externalIcs';
+import { currentSubscription, disablePush, enablePush, isStandalone, notifySpouse, pushConfigured } from '../lib/push';
 import { HOME_PRESETS, WORK_PRESETS, type WeatherLoc } from '../lib/weather';
 import { ANCHOR, DEFAULT_COLORS, SHIFT_OPTIONS, SHIFT_TIMES, type Shift, type ShiftColors } from '../lib/shift';
 import { shiftCalsFor, weatherLocs, type LocSetting, type Settings } from '../state';
@@ -16,6 +17,7 @@ type Props = {
   settings: Settings;
   update: (p: Partial<Settings>) => void;
   colors: ShiftColors;
+  token: string | null;
   calendars: GCalendar[];
   connected: boolean;
   ready: boolean;
@@ -30,6 +32,63 @@ type Props = {
   onSync: () => void;
   onClose: () => void;
 };
+
+function PushSetting({ settings, update, token }: { settings: Settings; update: (p: Partial<Settings>) => void; token: string | null }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [msg, setMsg] = useState('');
+  const [name, setName] = useState(settings.myName ?? '');
+  const calId = settings.sharedCalId;
+  useEffect(() => {
+    currentSubscription().then((s) => setOn(!!s && Notification.permission === 'granted'), () => setOn(false));
+  }, []);
+  if (!pushConfigured) return null;
+  const ready = !!(token && calId);
+  const act = async (fn: () => Promise<unknown>, ok: string) => {
+    setMsg('처리 중…');
+    try {
+      await fn();
+      setMsg(ok);
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
+  return (
+    <section>
+      <h3>배우자 변경 알림</h3>
+      <p className="muted">한 사람이 앱에서 근무 변경·메모를 하면 다른 사람 폰으로 푸시 알림이 갑니다. 두 분 모두 각자 폰에서 켜주세요.</p>
+      {!isStandalone() && <p className="warn">아이폰은 Safari 탭이 아니라 "홈 화면에 추가"한 앱에서 켜야 알림이 옵니다.</p>}
+      <div className="row">
+        <input placeholder="내 이름 (예: 현식)" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => update({ myName: name.trim() })} />
+      </div>
+      {on ? (
+        <div className="row">
+          <span>🔔 이 기기 알림 켜짐</span>
+          <button className="btn ghost" disabled={!ready} onClick={() => act(() => disablePush(token!, calId!).then(() => setOn(false)), '알림을 껐습니다.')}>
+            끄기
+          </button>
+        </div>
+      ) : (
+        <button
+          className="btn wide"
+          disabled={!ready || !name.trim()}
+          onClick={() => {
+            update({ myName: name.trim() });
+            act(() => enablePush(token!, calId!, name.trim()).then(() => setOn(true)), '이 기기에서 알림을 받습니다.');
+          }}
+        >
+          이 기기에서 알림 받기
+        </button>
+      )}
+      {on && (
+        <button className="btn ghost wide" disabled={!ready} onClick={() => act(() => notifySpouse(token!, calId!, `${name || '나'}님 테스트 알림입니다 🔔`, true), '테스트 알림을 보냈습니다.')}>
+          테스트 알림 보내기 (나에게도)
+        </button>
+      )}
+      {!ready && <p className="muted">Google 연결과 공유 근무 캘린더 지정이 먼저 필요합니다.</p>}
+      {msg && <p className="muted">{msg}</p>}
+    </section>
+  );
+}
 
 function WeatherSetting({ settings, update }: { settings: Settings; update: (p: Partial<Settings>) => void }) {
   const locs = weatherLocs(settings);
@@ -265,6 +324,8 @@ export function SettingsSheet(p: Props) {
           </section>
         </>
       )}
+
+      <PushSetting settings={settings} update={p.update} token={p.token} />
 
       <ExternalCalendars settings={settings} update={p.update} />
 

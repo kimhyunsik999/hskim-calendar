@@ -33,6 +33,7 @@ jobs:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           VITE_ICS_PROXY: ${{ vars.ICS_PROXY_URL }}
           VITE_PERSISTENT_LOGIN: ${{ vars.PERSISTENT_LOGIN }}
+          VITE_VAPID_PUBLIC: ${{ vars.VAPID_PUBLIC }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
