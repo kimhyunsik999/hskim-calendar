@@ -48,7 +48,8 @@ export default function App() {
   const data = useCalendarData(g.token, settings, update, from, to, g.expire);
   // iCloud calendars: the list stored in the shared Google calendar wins (so the spouse gets it for free);
   // the per-device list is only a fallback / offline cache.
-  const isOwner = data.calendars.find((c) => c.id === settings.sharedCalId)?.accessRole === 'owner';
+  // Owner or writer of the shared calendar — both spouses can edit the shared settings.
+  const canWrite = ['owner', 'writer'].includes(data.calendars.find((c) => c.id === settings.sharedCalId)?.accessRole ?? '');
   const externalsRaw = data.sharedExternals ?? settings.externals ?? [];
   const extKey = JSON.stringify(externalsRaw);
   const externals = useMemo(() => externalsRaw, [extKey]); // stable identity while the content is unchanged
@@ -114,15 +115,19 @@ export default function App() {
   const migratedExt = useRef(false);
   useEffect(() => {
     const local = settings.externals ?? [];
-    if (migratedExt.current || !g.token || !settings.sharedCalId || !isOwner || data.sharedExternals !== null || !local.length) return;
+    if (migratedExt.current || !g.token || !settings.sharedCalId || !canWrite || data.sharedExternals !== null || !local.length) return;
     migratedExt.current = true;
     writeExternals(g.token, settings.sharedCalId, local).then(data.reload, () => (migratedExt.current = false));
-  }, [g.token, settings.sharedCalId, isOwner, data.sharedExternals, settings.externals, data.reload]);
+  }, [g.token, settings.sharedCalId, canWrite, data.sharedExternals, settings.externals, data.reload]);
 
   /** Add/remove iCloud calendars: shared calendar when we own one, otherwise this device only. */
   const saveExternals = (list: ExtCal[]) => {
-    if (g.token && settings.sharedCalId && isOwner) {
-      run((t) => writeExternals(t, settings.sharedCalId!, list), '공유 캘린더에 저장했습니다 (배우자 폰에도 적용)').then((ok) => ok && update({ externals: list }));
+    if (g.token && settings.sharedCalId && canWrite) {
+      run((t) => writeExternals(t, settings.sharedCalId!, list), '공유 캘린더에 저장했습니다 (배우자 폰에도 적용)').then((ok) => {
+        if (!ok) return;
+        update({ externals: list });
+        tell('iCloud 캘린더 목록을 변경했어요');
+      });
     } else update({ externals: list });
   };
 
@@ -374,7 +379,7 @@ export default function App() {
           token={g.token}
           externals={externals}
           externalsShared={!!(g.token && settings.sharedCalId)}
-          canEditExternals={!(g.token && settings.sharedCalId) || isOwner}
+          canEditExternals={!(g.token && settings.sharedCalId) || canWrite}
           onExternals={saveExternals}
           calendars={data.calendars}
           connected={!!g.token}

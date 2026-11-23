@@ -191,7 +191,7 @@ function ExternalCalendars({
           <>
             아이폰 캘린더 앱 › 캘린더 목록 › 해당 캘린더 ⓘ › <b>공개 캘린더</b> 켜기 › 링크 공유로 복사한 주소를 붙여넣으세요. 공유받은 캘린더는 만든 사람만 공개로 바꿀 수 있습니다.{' '}
             {shared
-              ? '목록은 공유 근무 캘린더에 저장되어 배우자 폰에도 자동으로 적용됩니다. 추가·삭제는 공유 캘린더를 만든 사람만 할 수 있습니다.'
+              ? '목록은 공유 근무 캘린더에 저장되어 두 사람 폰에 모두 적용됩니다. 누가 추가·삭제해도 서로에게 반영됩니다.'
               : 'Google 연결 전에는 이 기기에만 저장됩니다.'}
           </>
         }
@@ -199,7 +199,7 @@ function ExternalCalendars({
         iCloud 캘린더
       </Title>
       {!ICS_PROXY && <p className="warn">iCloud 중계 서버가 아직 설정되지 않았습니다.</p>}
-      {shared && !canEdit && <p className="muted">공유 캘린더 소유자가 관리하는 목록입니다.</p>}
+      {shared && !canEdit && <p className="muted">공유 캘린더 편집 권한이 있어야 바꿀 수 있습니다.</p>}
       <ul className="cal-list">
         {list.map((c) => (
           <li key={c.id} className="row">

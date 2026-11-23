@@ -90,7 +90,14 @@ export async function subscribeCalendar(token: string, calId: string) {
 
 // ---------- events ----------
 
-export type Kind = 'shift' | 'override' | 'monthMemo';
+export type Kind = 'shift' | 'override' | 'monthMemo' | 'config';
+
+/** All events of one app kind, regardless of date (small sets only, e.g. the config event). */
+export async function listTagged(token: string, calId: string, kind: Kind): Promise<GEvent[]> {
+  const q = new URLSearchParams({ sharedExtendedProperty: `kind=${kind}`, maxResults: '50' });
+  const r = await call<{ items: GEvent[] }>(token, `/calendars/${enc(calId)}/events?${q}`);
+  return r.items.filter((e) => e.status !== 'cancelled');
+}
 
 export type GEvent = {
   id: string;

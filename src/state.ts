@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchExternal, type ExtCal } from './lib/externalIcs';
 import { fetchForecast, HOME_PRESETS, WORK_PRESETS, type Forecast, type WeatherLoc } from './lib/weather';
 import { AuthError, getCalendar, listCalendars, listEvents, normalize, subscribeCalendar, type CalEvent, type GCalendar } from './google/api';
-import { readExternals } from './google/sync';
+import { readExternals, readSharedConfig, sharedExternalsOf } from './google/sync';
 import { canRefresh, clearToken, initGis, refreshToken, requestToken, revoke, storedToken, type Token } from './google/gis';
 import type { DateStr } from './lib/date';
 import type { Overrides, ShiftColors } from './lib/shift';
@@ -277,9 +277,11 @@ export function useCalendarData(
     setLoading(true);
     setError(null);
     (async () => {
-      const [calendars, main] = await Promise.all([
+      const sid = settings.sharedCalId;
+      const [calendars, config, main] = await Promise.all([
         listCalendars(token),
-        settings.sharedCalId ? getCalendar(token, settings.sharedCalId).catch(() => null) : Promise.resolve(null),
+        sid ? readSharedConfig(token, sid).catch(() => null) : Promise.resolve(null),
+        sid ? getCalendar(token, sid).catch(() => null) : Promise.resolve(null), // legacy list location
       ]);
       const byId = new Map(calendars.map((c) => [c.id, c]));
       // Shift calendars are drawn as badges — never fetch them as overlay events.
@@ -305,7 +307,7 @@ export function useCalendarData(
         calendars,
         overrides,
         monthMemos: all.filter((e) => e.kind === 'monthMemo'),
-        sharedExternals: main ? readExternals(main.description) : null,
+        sharedExternals: sharedExternalsOf(config) ?? (main ? readExternals(main.description) : null),
         // Shifts/overrides are drawn as badges, not as event bars.
         events: all.filter((e) => !e.kind),
       };

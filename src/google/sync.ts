@@ -21,6 +21,7 @@ import {
   insertEvent,
   listCalendars,
   listEvents,
+  listTagged,
   listWriters,
   patchCalendar,
   patchEvent,
@@ -51,18 +52,53 @@ function readMap(desc?: string): ShiftCals | null {
 
 // ---------- app data kept in the main calendar's description (visible only to its members) ----------
 
-/** iCloud (public ICS) calendars shared by the couple — stored here so a new device/spouse gets them automatically. */
+/** Legacy (owner-only) location of the iCloud list — read for migration only. */
 const EXT_MARK = '[hskim-calendar-ext] ';
+
+const validExt = (list: unknown): ExtCal[] | null =>
+  Array.isArray(list) ? list.filter((c) => c && typeof c.url === 'string' && typeof c.name === 'string') : null;
 
 export function readExternals(desc?: string): ExtCal[] | null {
   const line = desc?.split('\n').find((l) => l.startsWith(EXT_MARK));
   if (!line) return null;
   try {
-    const list = JSON.parse(line.slice(EXT_MARK.length));
-    return Array.isArray(list) ? list.filter((c) => c && typeof c.url === 'string' && typeof c.name === 'string') : null;
+    return validExt(JSON.parse(line.slice(EXT_MARK.length)));
   } catch {
     return null;
   }
+}
+
+// ---------- shared app settings: one all-day "config" event both spouses can edit (writers can't edit calendar metadata) ----------
+
+const CONFIG_DATE = '2000-01-01'; // far from any month the app shows
+
+type SharedConfig = { externals?: ExtCal[] };
+
+export async function readSharedConfig(token: string, mainId: string): Promise<{ id: string; config: SharedConfig } | null> {
+  const [ev] = await listTagged(token, mainId, 'config');
+  if (!ev) return null;
+  try {
+    return { id: ev.id, config: JSON.parse(ev.description ?? '{}') as SharedConfig };
+  } catch {
+    return { id: ev.id, config: {} };
+  }
+}
+
+export const sharedExternalsOf = (c: { config: SharedConfig } | null) => (c ? validExt(c.config.externals) : null);
+
+/** Save the iCloud list for both spouses (creates the config event on first use). */
+export async function writeExternals(token: string, mainId: string, list: ExtCal[]) {
+  const cur = await readSharedConfig(token, mainId);
+  const description = JSON.stringify({ ...(cur?.config ?? {}), externals: list });
+  if (cur) return patchEvent(token, mainId, cur.id, { description });
+  return insertEvent(token, mainId, {
+    summary: '⚙️ 4조 근무표 앱 설정 (삭제하지 마세요)',
+    description,
+    ...allDay(CONFIG_DATE),
+    transparency: 'transparent',
+    reminders: { useDefault: false, overrides: [] },
+    ...tag('config'),
+  } as Partial<GEvent>);
 }
 
 /** Replace one marked line of the main calendar's description (other lines kept). Owner only. */
@@ -72,7 +108,6 @@ async function setDescLine(token: string, mainId: string, mark: string, value: u
   await patchCalendar(token, mainId, { description: (rest ? rest + '\n' : '') + mark + JSON.stringify(value) });
 }
 
-export const writeExternals = (token: string, mainId: string, list: ExtCal[]) => setDescLine(token, mainId, EXT_MARK, list);
 
 /**
  * Make sure the 4 per-shift calendars (A/B/C/휴) exist, are in this user's list, and carry the chosen colors.
