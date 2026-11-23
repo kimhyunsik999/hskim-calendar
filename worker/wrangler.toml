@@ -8,4 +8,7 @@ GOOGLE_CLIENT_ID = "96523648456-bfhlhpdco6abikujk9h3bmqaof28i2sj.apps.googleuser
 VAPID_PUBLIC = "BBaGEQ5-wfpLtAEX4xgsEHVe7kjG4uibA_ZuCQqxc3UU1oJ_bK7hsV6cdKv9KRoEHOxKU99tGN0Wm1DlMPsAYDI"
 
 # Secrets (not in git): wrangler secret put GOOGLE_CLIENT_SECRET / TOKEN_KEY / VAPID_PRIVATE_JWK
-# KV for push subscriptions is added below once created (wrangler kv namespace create PUSH).
+# KV for push subscriptions (wrangler kv namespace create PUSH)
+[[kv_namespaces]]
+binding = "PUSH"
+id = "f07b5aa0745a471a8437d514b1b38b25"
