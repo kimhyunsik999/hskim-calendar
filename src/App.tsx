@@ -6,11 +6,12 @@ import { MonthGrid } from './components/MonthGrid';
 import { SettingsSheet, SHARED_CAL_NAME } from './components/SettingsSheet';
 import { StatsSheet } from './components/StatsSheet';
 import { AuthError, allDay, createCalendar, deleteEvent, insertEvent, type CalEvent } from './google/api';
-import { ensureShiftCalendars, saveMonthMemo, setOverride, shareAll, syncShifts } from './google/sync';
+import { ensureShiftCalendars, saveMonthMemo, setOverride, shareAll, syncShifts, writeExternals } from './google/sync';
 import { addDays, monthGrid, parts, shiftMonth, today, WEEKDAYS, ymd, type DateStr } from './lib/date';
 import { holidaysOf, type HolidayMap } from './lib/korean';
 import { baseShift, DEFAULT_COLORS, SHIFT_OPTIONS, SYNC_VERSION, textOn, type Shift, type ShiftColors } from './lib/shift';
 import { notifySpouse, refreshRegistration } from './lib/push';
+import type { ExtCal } from './lib/externalIcs';
 import { shiftCalsFor, useCalendarData, useExternalEvents, useGoogle, useSettings, useWeather, weatherLocs } from './state';
 
 /** '2026-12-03' → '12/3' */
@@ -45,7 +46,13 @@ export default function App() {
   const from = days[0];
   const to = days[days.length - 1];
   const data = useCalendarData(g.token, settings, update, from, to, g.expire);
-  const ext = useExternalEvents(settings.externals, from, to);
+  // iCloud calendars: the list stored in the shared Google calendar wins (so the spouse gets it for free);
+  // the per-device list is only a fallback / offline cache.
+  const isOwner = data.calendars.find((c) => c.id === settings.sharedCalId)?.accessRole === 'owner';
+  const externalsRaw = data.sharedExternals ?? settings.externals ?? [];
+  const extKey = JSON.stringify(externalsRaw);
+  const externals = useMemo(() => externalsRaw, [extKey]); // stable identity while the content is unchanged
+  const ext = useExternalEvents(externals, from, to);
   const wxLocs = weatherLocs(settings);
   const homeWx = useWeather(wxLocs.home);
   const workWx = useWeather(wxLocs.work);
@@ -102,6 +109,22 @@ export default function App() {
   useEffect(() => {
     if (g.token && settings.sharedCalId && settings.myName) refreshRegistration(g.token, settings.sharedCalId, settings.myName).catch(() => undefined);
   }, [g.token, settings.sharedCalId, settings.myName]);
+
+  // One-time move of this device's iCloud list into the shared calendar (owner only), so the spouse gets it.
+  const migratedExt = useRef(false);
+  useEffect(() => {
+    const local = settings.externals ?? [];
+    if (migratedExt.current || !g.token || !settings.sharedCalId || !isOwner || data.sharedExternals !== null || !local.length) return;
+    migratedExt.current = true;
+    writeExternals(g.token, settings.sharedCalId, local).then(data.reload, () => (migratedExt.current = false));
+  }, [g.token, settings.sharedCalId, isOwner, data.sharedExternals, settings.externals, data.reload]);
+
+  /** Add/remove iCloud calendars: shared calendar when we own one, otherwise this device only. */
+  const saveExternals = (list: ExtCal[]) => {
+    if (g.token && settings.sharedCalId && isOwner) {
+      run((t) => writeExternals(t, settings.sharedCalId!, list), '공유 캘린더에 저장했습니다 (배우자 폰에도 적용)').then((ok) => ok && update({ externals: list }));
+    } else update({ externals: list });
+  };
 
   const colors = useMemo<ShiftColors>(() => ({ ...DEFAULT_COLORS, ...settings.colors }), [settings.colors]);
 
@@ -349,6 +372,10 @@ export default function App() {
           update={update}
           colors={colors}
           token={g.token}
+          externals={externals}
+          externalsShared={!!(g.token && settings.sharedCalId)}
+          canEditExternals={!(g.token && settings.sharedCalId) || isOwner}
+          onExternals={saveExternals}
           calendars={data.calendars}
           connected={!!g.token}
           ready={g.ready}

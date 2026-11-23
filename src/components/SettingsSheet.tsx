@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { GCalendar } from '../google/api';
 import { CLIENT_ID } from '../google/gis';
-import { ICS_PROXY, normalizeIcsUrl } from '../lib/externalIcs';
+import { ICS_PROXY, normalizeIcsUrl, type ExtCal } from '../lib/externalIcs';
 import { currentSubscription, disablePush, enablePush, isStandalone, notifySpouse, pushConfigured } from '../lib/push';
 import { HOME_PRESETS, leaveTime, WORK_PRESETS, type WeatherLoc } from '../lib/weather';
 import { ANCHOR, DEFAULT_COLORS, SHIFT_OPTIONS, SHIFT_TIMES, type Shift, type ShiftColors } from '../lib/shift';
@@ -18,6 +18,10 @@ type Props = {
   update: (p: Partial<Settings>) => void;
   colors: ShiftColors;
   token: string | null;
+  externals: ExtCal[];
+  externalsShared: boolean;
+  canEditExternals: boolean;
+  onExternals: (list: ExtCal[]) => void;
   calendars: GCalendar[];
   connected: boolean;
   ready: boolean;
@@ -164,8 +168,18 @@ function linkTag(url: string) {
   return ` ${host} · …${u.slice(-4)}`;
 }
 
-function ExternalCalendars({ settings, update }: { settings: Settings; update: (p: Partial<Settings>) => void }) {
-  const list = settings.externals ?? [];
+function ExternalCalendars({
+  list,
+  shared,
+  canEdit,
+  onChange,
+}: {
+  list: ExtCal[];
+  /** Stored in the shared Google calendar (spouse sees the same list). */
+  shared: boolean;
+  canEdit: boolean;
+  onChange: (list: ExtCal[]) => void;
+}) {
   const [name, setName] = useState('가족');
   const [url, setUrl] = useState('');
   const [color, setColor] = useState('#e03131');
@@ -175,13 +189,17 @@ function ExternalCalendars({ settings, update }: { settings: Settings; update: (
       <Title
         help={
           <>
-            아이폰 캘린더 앱 › 캘린더 목록 › 해당 캘린더 ⓘ › <b>공개 캘린더</b> 켜기 › 링크 공유로 복사한 주소를 붙여넣으세요. 공유받은 캘린더는 만든 사람만 공개로 바꿀 수 있습니다. 이 설정은 기기마다 따로 저장됩니다.
+            아이폰 캘린더 앱 › 캘린더 목록 › 해당 캘린더 ⓘ › <b>공개 캘린더</b> 켜기 › 링크 공유로 복사한 주소를 붙여넣으세요. 공유받은 캘린더는 만든 사람만 공개로 바꿀 수 있습니다.{' '}
+            {shared
+              ? '목록은 공유 근무 캘린더에 저장되어 배우자 폰에도 자동으로 적용됩니다. 추가·삭제는 공유 캘린더를 만든 사람만 할 수 있습니다.'
+              : 'Google 연결 전에는 이 기기에만 저장됩니다.'}
           </>
         }
       >
         iCloud 캘린더
       </Title>
       {!ICS_PROXY && <p className="warn">iCloud 중계 서버가 아직 설정되지 않았습니다.</p>}
+      {shared && !canEdit && <p className="muted">공유 캘린더 소유자가 관리하는 목록입니다.</p>}
       <ul className="cal-list">
         {list.map((c) => (
           <li key={c.id} className="row">
@@ -190,12 +208,15 @@ function ExternalCalendars({ settings, update }: { settings: Settings; update: (
               {c.name}
               <small className="muted">{linkTag(c.url)}</small>
             </label>
-            <button className="btn ghost" onClick={() => confirm(`"${c.name}" 캘린더를 앱에서 뺄까요?`) && update({ externals: list.filter((x) => x.id !== c.id) })}>
-              삭제
-            </button>
+            {canEdit && (
+              <button className="btn ghost" onClick={() => confirm(`"${c.name}" 캘린더를 앱에서 뺄까요?`) && onChange(list.filter((x) => x.id !== c.id))}>
+                삭제
+              </button>
+            )}
           </li>
         ))}
       </ul>
+      {canEdit && (
       <form
         className="ext-form"
         onSubmit={(e) => {
@@ -206,7 +227,7 @@ function ExternalCalendars({ settings, update }: { settings: Settings; update: (
             alert(`이미 "${dup.name}" 이름으로 추가된 링크입니다.`);
             return;
           }
-          update({ externals: [...list, { id: `ext:${Date.now().toString(36)}`, name: name.trim() || 'iCloud', url: url.trim(), color }] });
+          onChange([...list, { id: `ext:${Date.now().toString(36)}`, name: name.trim() || 'iCloud', url: url.trim(), color }]);
           setUrl('');
         }}
       >
@@ -219,6 +240,7 @@ function ExternalCalendars({ settings, update }: { settings: Settings; update: (
           iCloud 캘린더 추가
         </button>
       </form>
+      )}
     </section>
   );
 }
@@ -365,7 +387,7 @@ export function SettingsSheet(p: Props) {
 
       <PushSetting settings={settings} update={p.update} token={p.token} />
 
-      <ExternalCalendars settings={settings} update={p.update} />
+      <ExternalCalendars list={p.externals} shared={p.externalsShared} canEdit={p.canEditExternals} onChange={p.onExternals} />
 
       <WeatherSetting settings={settings} update={p.update} />
 

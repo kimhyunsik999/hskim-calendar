@@ -31,6 +31,8 @@ import {
   type GEvent,
 } from './api';
 
+import type { ExtCal } from '../lib/externalIcs';
+
 export type ShiftCals = Record<ShiftCalKey, string>;
 const KEYS: ShiftCalKey[] = ['A', 'B', 'C', '휴'];
 /** The main shared calendar's description carries the ids of the 4 shift calendars, so both spouses find the same ones. */
@@ -46,6 +48,31 @@ function readMap(desc?: string): ShiftCals | null {
     return null;
   }
 }
+
+// ---------- app data kept in the main calendar's description (visible only to its members) ----------
+
+/** iCloud (public ICS) calendars shared by the couple — stored here so a new device/spouse gets them automatically. */
+const EXT_MARK = '[hskim-calendar-ext] ';
+
+export function readExternals(desc?: string): ExtCal[] | null {
+  const line = desc?.split('\n').find((l) => l.startsWith(EXT_MARK));
+  if (!line) return null;
+  try {
+    const list = JSON.parse(line.slice(EXT_MARK.length));
+    return Array.isArray(list) ? list.filter((c) => c && typeof c.url === 'string' && typeof c.name === 'string') : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Replace one marked line of the main calendar's description (other lines kept). Owner only. */
+async function setDescLine(token: string, mainId: string, mark: string, value: unknown) {
+  const main = await getCalendar(token, mainId);
+  const rest = (main.description ?? '').split('\n').filter((l) => !l.startsWith(mark)).join('\n').trim();
+  await patchCalendar(token, mainId, { description: (rest ? rest + '\n' : '') + mark + JSON.stringify(value) });
+}
+
+export const writeExternals = (token: string, mainId: string, list: ExtCal[]) => setDescLine(token, mainId, EXT_MARK, list);
 
 /**
  * Make sure the 4 per-shift calendars (A/B/C/휴) exist, are in this user's list, and carry the chosen colors.
@@ -69,8 +96,7 @@ export async function ensureShiftCalendars(token: string, mainId: string, colors
       created[k] = c.id;
       for (const w of writers) await shareCalendar(token, c.id, w);
     }
-    const rest = (main.description ?? '').split('\n').filter((l) => !l.startsWith(MARK)).join('\n').trim();
-    await patchCalendar(token, mainId, { description: (rest ? rest + '\n' : '') + MARK + JSON.stringify(created) });
+    await setDescLine(token, mainId, MARK, created);
     map = created;
   }
 

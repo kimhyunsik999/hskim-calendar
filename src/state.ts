@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchExternal, type ExtCal } from './lib/externalIcs';
 import { fetchForecast, HOME_PRESETS, WORK_PRESETS, type Forecast, type WeatherLoc } from './lib/weather';
-import { AuthError, listCalendars, listEvents, normalize, subscribeCalendar, type CalEvent, type GCalendar } from './google/api';
+import { AuthError, getCalendar, listCalendars, listEvents, normalize, subscribeCalendar, type CalEvent, type GCalendar } from './google/api';
+import { readExternals } from './google/sync';
 import { canRefresh, clearToken, initGis, refreshToken, requestToken, revoke, storedToken, type Token } from './google/gis';
 import type { DateStr } from './lib/date';
 import type { Overrides, ShiftColors } from './lib/shift';
@@ -231,6 +232,8 @@ export type CalData = {
   events: CalEvent[];
   overrides: Overrides;
   monthMemos: CalEvent[];
+  /** iCloud calendars stored in the shared calendar (null = none stored yet). */
+  sharedExternals?: ExtCal[] | null;
 };
 
 const EMPTY: CalData = { calendars: [], events: [], overrides: {}, monthMemos: [] };
@@ -274,7 +277,10 @@ export function useCalendarData(
     setLoading(true);
     setError(null);
     (async () => {
-      const calendars = await listCalendars(token);
+      const [calendars, main] = await Promise.all([
+        listCalendars(token),
+        settings.sharedCalId ? getCalendar(token, settings.sharedCalId).catch(() => null) : Promise.resolve(null),
+      ]);
       const byId = new Map(calendars.map((c) => [c.id, c]));
       // Shift calendars are drawn as badges — never fetch them as overlay events.
       const shiftIds = new Set(Object.values(shiftCalsFor(settings) ?? {}));
@@ -299,6 +305,7 @@ export function useCalendarData(
         calendars,
         overrides,
         monthMemos: all.filter((e) => e.kind === 'monthMemo'),
+        sharedExternals: main ? readExternals(main.description) : null,
         // Shifts/overrides are drawn as badges, not as event bars.
         events: all.filter((e) => !e.kind),
       };
