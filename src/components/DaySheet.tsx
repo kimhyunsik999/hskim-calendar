@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CalEvent } from '../google/api';
-import { parts, WEEKDAYS, weekday, type DateStr } from '../lib/date';
+import { addDays, parts, WEEKDAYS, weekday, type DateStr } from '../lib/date';
+import { describe, icon, isAlert, shiftWeather, type Forecast, type Hour } from '../lib/weather';
 import { lunarOf, type HolidayMap } from '../lib/korean';
 import { baseShift, effectiveShift, isWork, SHIFT_OPTIONS, SHIFT_TIMES, type Overrides, type Shift } from '../lib/shift';
 import { Sheet } from './Sheet';
@@ -18,7 +19,17 @@ type Props = {
   onOverride: (date: DateStr, s: Shift | null) => void;
   onAddMemo: (date: DateStr, title: string, time: string) => void;
   onDelete: (ev: CalEvent) => void;
+  forecast: Forecast | null;
+  weatherPlace?: string;
 };
+
+function WxLine({ label, h }: { label: string; h: Hour }) {
+  return (
+    <div className={isAlert(h) ? 'alert' : ''}>
+      {icon(h.code, h.day)} {label} · {describe(h.code)} {Math.round(h.t)}° · 강수 {h.p}%
+    </div>
+  );
+}
 
 export function DaySheet(p: Props) {
   const { date } = p;
@@ -30,6 +41,7 @@ export function DaySheet(p: Props) {
   const dayEvents = p.events
     .filter((e) => e.start <= date && e.end >= date)
     .sort((a, b) => Number(b.allDay) - Number(a.allDay) || (a.time ?? '').localeCompare(b.time ?? ''));
+  const wx = shiftWeather(p.forecast, date, shift, addDays(date, 1));
   const [title, setTitle] = useState('');
   const [time, setTime] = useState('');
 
@@ -56,6 +68,20 @@ export function DaySheet(p: Props) {
           </div>
         </div>
       </section>
+
+      {wx && (
+        <section className="day-wx">
+          <h3>날씨{p.weatherPlace ? ` · ${p.weatherPlace}` : ''}</h3>
+          {isWork(shift) ? (
+            <>
+              <WxLine label={`출근 ${SHIFT_TIMES[shift].start}`} h={wx.start} />
+              {wx.end && <WxLine label={`퇴근 ${SHIFT_TIMES[shift].end}${shift === 'C' ? ' (다음날)' : ''}`} h={wx.end} />}
+            </>
+          ) : (
+            <WxLine label="낮 12시" h={wx.start} />
+          )}
+        </section>
+      )}
 
       <section>
         <h3>근무 변경</h3>

@@ -70,7 +70,11 @@ main { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; }
 .head .aux { font-size: 9.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: 2px; line-height: 16px; }
 .head .aux.red { color: var(--red); }
 .out { opacity: 0.35; }
-.badge-wrap { display: grid; place-items: center; }
+.badge-wrap { display: grid; place-items: center; position: relative; }
+.wx { position: absolute; right: 1px; bottom: 0; font-size: 12px; line-height: 1; }
+.wx.alert { filter: drop-shadow(0 0 2px rgba(240, 62, 62, 0.9)); }
+.day-wx { display: grid; gap: 4px; font-size: 14px; }
+.day-wx .alert { color: var(--red); font-weight: 600; }
 
 .badge { display: inline-grid; place-items: center; width: 27px; height: 27px; border-radius: 6px; font-weight: 700; font-size: 14px; position: relative; }
 .badge.sa { background: var(--c-A); color: var(--t-A); }

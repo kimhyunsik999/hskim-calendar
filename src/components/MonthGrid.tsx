@@ -4,6 +4,7 @@ import { diffDays, parts, weekday, type DateStr } from '../lib/date';
 import type { HolidayMap } from '../lib/korean';
 import { lunarLabel } from '../lib/korean';
 import { effectiveShift, type Overrides } from '../lib/shift';
+import { icon, isAlert, keyHour, type Forecast } from '../lib/weather';
 import { ShiftBadge } from './ShiftBadge';
 
 const MAX_LANES = 4;
@@ -44,10 +45,11 @@ type Props = {
   events: CalEvent[];
   overrides: Overrides;
   holidays: HolidayMap;
+  forecast: Forecast | null;
   onPick: (d: DateStr) => void;
 };
 
-export function MonthGrid({ month, days, todayStr, events, overrides, holidays, onPick }: Props) {
+export function MonthGrid({ month, days, todayStr, events, overrides, holidays, forecast, onPick }: Props) {
   const weeks = useMemo(() => Array.from({ length: days.length / 7 }, (_, i) => days.slice(i * 7, i * 7 + 7)), [days]);
 
   return (
@@ -82,15 +84,24 @@ export function MonthGrid({ month, days, todayStr, events, overrides, holidays, 
                   </div>
                 );
               })}
-              {w.map((d, i) => (
-                <div
-                  key={'b' + d}
-                  className={'badge-wrap' + (parts(d)[1] !== month ? ' out' : '')}
-                  style={{ gridColumn: i + 1, gridRow: 2 }}
-                >
-                  <ShiftBadge shift={effectiveShift(d, overrides)} changed={!!overrides[d]} />
-                </div>
-              ))}
+              {w.map((d, i) => {
+                const s = effectiveShift(d, overrides);
+                const wx = forecast?.hours[keyHour(d, s)];
+                return (
+                  <div
+                    key={'b' + d}
+                    className={'badge-wrap' + (parts(d)[1] !== month ? ' out' : '')}
+                    style={{ gridColumn: i + 1, gridRow: 2 }}
+                  >
+                    <ShiftBadge shift={s} changed={!!overrides[d]} />
+                    {wx && d >= todayStr && (
+                      <span className={'wx' + (isAlert(wx) ? ' alert' : '')} title={`${Math.round(wx.t)}° ${wx.p}%`}>
+                        {icon(wx.code, wx.day)}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
               {segs.map(({ ev, s, e, lane, contLeft }) => (
                 <div
                   key={ev.calendarId + ev.id + s}

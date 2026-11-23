@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchExternal, type ExtCal } from './lib/externalIcs';
+import { fetchForecast, WEATHER_PRESETS, type Forecast, type WeatherLoc } from './lib/weather';
 import { AuthError, listCalendars, listEvents, normalize, subscribeCalendar, type CalEvent, type GCalendar } from './google/api';
 import { clearToken, initGis, requestToken, revoke, storedToken, type Token } from './google/gis';
 import type { DateStr } from './lib/date';
@@ -40,7 +41,42 @@ export type Settings = {
   colors?: Partial<ShiftColors>;
   /** iCloud etc. calendars added by public ICS link (this device). */
   externals?: ExtCal[];
+  /** Weather location: a preset id, 'gps' (custom coords), or 'off'. Default 이천. */
+  weather?: { id: string; lat?: number; lon?: number };
 };
+
+// ---------- weather ----------
+
+export function weatherLocOf(s: Settings): WeatherLoc | null {
+  const w = s.weather ?? { id: 'icheon' };
+  if (w.id === 'off') return null;
+  if (w.id === 'gps' && w.lat != null && w.lon != null) return { id: 'gps', name: '현재 위치', lat: w.lat, lon: w.lon };
+  return WEATHER_PRESETS.find((p) => p.id === w.id) ?? WEATHER_PRESETS[0];
+}
+
+export function useWeather(loc: WeatherLoc | null) {
+  const [f, setF] = useState<Forecast | null>(() => load<Forecast | null>('hc.weather', null));
+  const key = loc ? `${loc.lat},${loc.lon}` : '';
+  useEffect(() => {
+    if (!loc) return;
+    const refresh = () => {
+      const cur = load<Forecast | null>('hc.weather', null);
+      if (cur && cur.loc === key && Date.now() - cur.at < 60 * 60_000) return setF(cur);
+      fetchForecast(loc).then(
+        (n) => {
+          setF(n);
+          save('hc.weather', n);
+        },
+        () => undefined, // offline: keep the cached forecast
+      );
+    };
+    refresh();
+    const v = () => document.visibilityState === 'visible' && refresh();
+    document.addEventListener('visibilitychange', v);
+    return () => document.removeEventListener('visibilitychange', v);
+  }, [key]); // loc is fully described by key
+  return loc && f?.loc === key ? f : null;
+}
 
 // ---------- external (iCloud) calendars ----------
 
