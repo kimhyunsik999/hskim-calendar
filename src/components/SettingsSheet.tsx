@@ -273,7 +273,7 @@ export function SettingsSheet(p: Props) {
   };
 
   return (
-    <Sheet title="설정" onClose={p.onClose}>
+    <Sheet title="설정" side="left" onClose={p.onClose}>
       <section>
         <h3>Google 계정</h3>
         {!CLIENT_ID ? (
