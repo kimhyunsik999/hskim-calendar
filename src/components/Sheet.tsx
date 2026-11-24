@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 
 const CLOSE_DIST = 110; // px dragged that closes on release
 const CLOSE_SPEED = 0.5; // px/ms flick that closes on release
+const EASE = 'cubic-bezier(.32,.72,0,1)'; // iOS sheet curve
+const DIM = 'rgba(0,0,0,.35)';
 
 type Side = 'bottom' | 'left';
 
@@ -21,6 +23,28 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
   closeRef.current = onClose;
   const left = side === 'left';
 
+  const hidden = left ? 'translateX(-100%)' : 'translateY(100%)';
+
+  /** Slide in on mount: start off-screen, then transition in on the next frame. */
+  useLayoutEffect(() => {
+    const sheet = sheetRef.current;
+    const back = backRef.current;
+    if (!sheet || !back) return;
+    sheet.style.transition = 'none';
+    sheet.style.transform = hidden;
+    back.style.transition = 'none';
+    back.style.backgroundColor = 'rgba(0,0,0,0)';
+    void sheet.offsetWidth; // commit the start state
+    const id = requestAnimationFrame(() => {
+      if (closing.current) return;
+      sheet.style.transition = `transform .36s ${EASE}`;
+      sheet.style.transform = '';
+      back.style.transition = 'background-color .3s';
+      back.style.backgroundColor = DIM;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [hidden]);
+
   /** Slide the panel out, then actually close. */
   const dismiss = useCallback(() => {
     const sheet = sheetRef.current;
@@ -28,9 +52,9 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
     if (closing.current) return;
     closing.current = true;
     if (!sheet || !back) return closeRef.current();
-    sheet.style.transition = 'transform .22s ease-in';
-    sheet.style.transform = left ? 'translateX(-100%)' : 'translateY(100%)';
-    back.style.transition = 'background-color .22s';
+    sheet.style.transition = `transform .28s ${EASE}`;
+    sheet.style.transform = hidden;
+    back.style.transition = 'background-color .28s';
     back.style.backgroundColor = 'rgba(0,0,0,0)';
     let done = false;
     const finish = () => {
@@ -38,9 +62,13 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
       done = true;
       closeRef.current();
     };
-    sheet.addEventListener('transitionend', finish, { once: true });
-    setTimeout(finish, 300);
-  }, [left]);
+    // Only the panel's own transform ends the close (child transitions bubble up too).
+    const onEnd = (e: TransitionEvent) => {
+      if (e.target === sheet && e.propertyName === 'transform') finish();
+    };
+    sheet.addEventListener('transitionend', onEnd);
+    setTimeout(finish, 400);
+  }, [hidden]);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && dismiss();
@@ -68,7 +96,7 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
     const setOffset = (d: number) => {
       sheet.style.transform = d ? (left ? `translateX(${-d}px)` : `translateY(${d}px)`) : '';
       const size = (left ? sheet.offsetWidth : sheet.offsetHeight) || 1;
-      back.style.backgroundColor = `rgba(0,0,0,${0.35 * Math.max(0, 1 - d / size)})`;
+      back.style.backgroundColor = `rgba(0,0,0,${0.35 * Math.max(0, 1 - d / size)})`; // follows the finger
     };
 
     const onStart = (e: TouchEvent) => {
@@ -128,8 +156,8 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
       if (off > CLOSE_DIST || (speed > CLOSE_SPEED && off > 20)) {
         dismiss();
       } else {
-        sheet.style.transition = 'transform .25s cubic-bezier(.2,.9,.3,1.2)';
-        back.style.transition = 'background-color .25s';
+        sheet.style.transition = `transform .3s ${EASE}`;
+        back.style.transition = 'background-color .3s';
         setOffset(0);
       }
     };
