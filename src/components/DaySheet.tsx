@@ -7,6 +7,7 @@ import { baseShift, effectiveShift, isWork, SHIFT_OPTIONS, SHIFT_TIMES, type Ove
 import type { ICloudCal } from '../lib/icloud';
 import { Sheet } from './Sheet';
 import { ShiftBadge } from './ShiftBadge';
+import { PickerField } from './PickerField';
 
 /** target: 'google' (shared 4조 calendar) or 'icloud:<calendar url>'. No time = all-day. */
 export type NewEventInput = { title: string; target: string; time?: string; minutes?: number };
@@ -54,7 +55,7 @@ function EventEditor({ ev, busy, onSave, onDelete, onCancel }: { ev: CalEvent; b
       <div className="muted small">{ev.calendarName} 일정 수정</div>
       <input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="제목" />
       <div className="add-row">
-        <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="날짜" />
+        <PickerField type="date" value={date} onChange={(v) => v && setDate(v)} label="날짜" />
         <label className="allday">
           <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
           종일
@@ -62,7 +63,7 @@ function EventEditor({ ev, busy, onSave, onDelete, onCancel }: { ev: CalEvent; b
       </div>
       {!allDay && (
         <div className="add-row">
-          <input type="time" value={time} onChange={(e) => setTime(e.target.value || '09:00')} aria-label="시작 시간" />
+          <PickerField type="time" value={time} onChange={(v) => setTime(v || '09:00')} label="시작 시간" />
           <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} aria-label="소요 시간">
             {durations.map((n) => (
               <option key={n} value={n}>
@@ -256,7 +257,7 @@ export function DaySheet(p: Props) {
           </div>
           {!allDay && (
             <div className="add-row">
-              <input type="time" value={time} onChange={(e) => setTime(e.target.value || '09:00')} disabled={!p.canEdit} aria-label="시작 시간" />
+              <PickerField type="time" value={time} onChange={(v) => setTime(v || '09:00')} disabled={!p.canEdit} label="시작 시간" />
               <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} disabled={!p.canEdit} aria-label="소요 시간">
                 {[30, 60, 90, 120, 180, 240].map((n) => (
                   <option key={n} value={n}>
