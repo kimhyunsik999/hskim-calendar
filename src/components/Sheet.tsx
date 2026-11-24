@@ -3,7 +3,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 
 const CLOSE_DIST = 110; // px dragged that closes on release
 const CLOSE_SPEED = 0.5; // px/ms flick that closes on release
 const EASE = 'cubic-bezier(.32,.72,0,1)'; // iOS sheet curve
-const DIM = 'rgba(0,0,0,.35)';
 
 type Side = 'bottom' | 'left';
 
@@ -16,6 +15,7 @@ type Side = 'bottom' | 'left';
  */
 export function Sheet({ title, onClose, children, side = 'bottom' }: { title: ReactNode; onClose: () => void; children: ReactNode; side?: Side }) {
   const backRef = useRef<HTMLDivElement>(null);
+  const dimRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const closing = useRef(false);
@@ -29,18 +29,19 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
   useLayoutEffect(() => {
     const sheet = sheetRef.current;
     const back = backRef.current;
-    if (!sheet || !back) return;
+    const dim = dimRef.current;
+    if (!sheet || !back || !dim) return;
     sheet.style.transition = 'none';
     sheet.style.transform = hidden;
-    back.style.transition = 'none';
-    back.style.backgroundColor = 'rgba(0,0,0,0)';
+    dim.style.transition = 'none';
+    dim.style.opacity = '0';
     void sheet.offsetWidth; // commit the start state
     const id = requestAnimationFrame(() => {
       if (closing.current) return;
       sheet.style.transition = `transform .36s ${EASE}`;
       sheet.style.transform = '';
-      back.style.transition = 'background-color .3s';
-      back.style.backgroundColor = DIM;
+      dim.style.transition = 'opacity .3s';
+      dim.style.opacity = '1';
     });
     return () => cancelAnimationFrame(id);
   }, [hidden]);
@@ -49,13 +50,14 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
   const dismiss = useCallback(() => {
     const sheet = sheetRef.current;
     const back = backRef.current;
+    const dim = dimRef.current;
     if (closing.current) return;
     closing.current = true;
-    if (!sheet || !back) return closeRef.current();
+    if (!sheet || !back || !dim) return closeRef.current();
     sheet.style.transition = `transform .28s ${EASE}`;
     sheet.style.transform = hidden;
-    back.style.transition = 'background-color .28s';
-    back.style.backgroundColor = 'rgba(0,0,0,0)';
+    dim.style.transition = 'opacity .28s';
+    dim.style.opacity = '0';
     let done = false;
     const finish = () => {
       if (done) return;
@@ -79,8 +81,9 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
   useEffect(() => {
     const sheet = sheetRef.current;
     const back = backRef.current;
+    const dim = dimRef.current;
     const body = bodyRef.current;
-    if (!sheet || !back || !body) return;
+    if (!sheet || !back || !dim || !body) return;
 
     // "Closing distance" along the dismiss direction: down for bottom, left for left.
     const along = (t: Touch) => (left ? -t.clientX : t.clientY);
@@ -96,7 +99,7 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
     const setOffset = (d: number) => {
       sheet.style.transform = d ? (left ? `translateX(${-d}px)` : `translateY(${d}px)`) : '';
       const size = (left ? sheet.offsetWidth : sheet.offsetHeight) || 1;
-      back.style.backgroundColor = `rgba(0,0,0,${0.35 * Math.max(0, 1 - d / size)})`; // follows the finger
+      dim.style.opacity = String(Math.max(0, 1 - d / size)); // follows the finger
     };
 
     const onStart = (e: TouchEvent) => {
@@ -126,7 +129,7 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
           start = last = along(t); // follow from here (no jump)
           lastT = e.timeStamp;
           sheet.style.transition = 'none';
-          back.style.transition = 'none';
+          dim.style.transition = 'none';
           (document.activeElement as HTMLElement | null)?.blur?.();
         } else {
           mode = 'scroll';
@@ -157,7 +160,7 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
         dismiss();
       } else {
         sheet.style.transition = `transform .3s ${EASE}`;
-        back.style.transition = 'background-color .3s';
+        dim.style.transition = 'opacity .3s';
         setOffset(0);
       }
     };
@@ -183,6 +186,9 @@ export function Sheet({ title, onClose, children, side = 'bottom' }: { title: Re
 
   return (
     <div className={`sheet-backdrop ${side}`} ref={backRef} onClick={dismiss}>
+      {/* Dim drawn as a gradient layer, not a background-color: iOS tints the status bar from
+          the background-color of fixed elements at the top and lags restoring it (black flash). */}
+      <div className="sheet-dim" ref={dimRef} />
       <div className={`sheet ${side}`} ref={sheetRef} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         {!left && <div className="sheet-grip" aria-hidden="true" />}
         <div className="sheet-head">
