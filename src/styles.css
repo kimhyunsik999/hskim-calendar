@@ -30,6 +30,10 @@ html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--fg); overscroll-behavior: none; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 input, select, textarea { font: inherit; font-size: 16px; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; }
+/* One height for every single-line field: iOS draws time/date inputs taller than selects/text by default. */
+input:not([type='checkbox']):not([type='radio']):not([type='color']), select { height: 42px; padding-top: 0; padding-bottom: 0; }
+input[type='time'], input[type='date'] { -webkit-appearance: none; appearance: none; display: flex; align-items: center; }
+input[type='time']::-webkit-date-and-time-value, input[type='date']::-webkit-date-and-time-value { text-align: left; margin: 0; }
 
 .app {
   display: flex; flex-direction: column; height: 100dvh;
